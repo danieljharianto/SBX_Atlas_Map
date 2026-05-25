@@ -1,0 +1,2995 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="./src/assets/logo.png">
+  <title>South Bronx Studio</title>
+  <script>
+    // Use HTML env replacement so values are available to classic inline scripts immediately.
+    const __readViteHtmlEnv = (value) =>
+      value && !value.startsWith("%VITE_") ? value : "";
+    window.MAPTILER_KEY = __readViteHtmlEnv("%VITE_MAPTILER_KEY%");
+    window.MAPBOX_ACCESS_TOKEN = __readViteHtmlEnv("%VITE_MAPBOX_ACCESS_TOKEN%");
+    window.ANTHROPIC_API_KEY = __readViteHtmlEnv("%VITE_ANTHROPIC_API_KEY%");
+
+    if (!window.MAPTILER_KEY || !window.MAPBOX_ACCESS_TOKEN) {
+      console.warn("Missing MAPTILER_KEY or MAPBOX_ACCESS_TOKEN in my-webmap/.env");
+    }
+  </script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Map - Static, always full screen, behind sidebar */
+    #map {
+      position: fixed !important;
+      top: 73px !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: calc(100vh - 73px) !important;
+      z-index: 0 !important;
+    }
+    
+    /* Mobile: adjust map top to account for smaller header */
+    @media (max-width: 767px) {
+      #map {
+        top: 60px !important;
+        height: calc(100vh - 60px) !important;
+      }
+    }
+    
+    .sidebar{
+      position: fixed;
+      top: 73px;
+      left: 0;
+      bottom: 0;
+      width: 420px;
+      transition: width .22s ease, transform .22s ease;
+      z-index: 10;
+      background: white;
+    }
+    
+    .sidebar.collapsed{
+      width: 96px;
+    }
+    .sidebar .panel{display:block}
+    .sidebar.collapsed .panel{display:none}
+    .sidebar .rail-justify{justify-content:flex-start}
+    .sidebar.collapsed .brand-text{display:none}
+    
+    /* Expand bar - extends from top to bottom on left */
+    .expand-bar{
+      width: 24px;
+      background-color: #e5e7eb;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      flex-shrink: 0;
+      height: 100%;
+    }
+    .expand-bar:hover{
+      background-color: #9ca3af;
+    }
+    
+    /* Ensure rail buttons have white background with proper width */
+    .rail-justify{
+      background-color: white;
+      min-width: 72px;
+      flex-shrink: 0;
+    }
+    
+    /* Clean popup styling - no black outlines */
+    .mapboxgl-popup-content{
+      padding: 0 !important;
+      border-radius: 12px !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+      border: none !important;
+    }
+    .mapboxgl-popup-close-button{
+      font-size: 20px !important;
+      padding: 8px !important;
+      color: #666 !important;
+    }
+    .mapboxgl-popup-tip{
+      border: none !important;
+    }
+    
+    /* Mobile-specific styles */
+    @media (max-width: 767px){
+      .sidebar{
+        position:fixed;
+        left:0;
+        top: 60px;
+        bottom:0;
+        width: 85vw;
+        max-width: 360px;
+        z-index:40;
+        transform:translateX(-100%);
+        box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+      }
+      .sidebar.open{
+        transform:translateX(0);
+      }
+      .sidebar.collapsed {
+        transform:translateX(-100%);
+      }
+      .backdrop{
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.35);
+        backdrop-filter:saturate(120%) blur(2px);
+        z-index:30;
+        display:none;
+      }
+      .backdrop.show{
+        display:block;
+      }
+      
+      /* Hide expand bar on mobile */
+      .expand-bar {
+        display: none;
+      }
+      
+      /* Mobile header adjustments */
+      header {
+        padding: 12px 16px !important;
+        height: 60px;
+      }
+      
+      header img {
+        height: 24px !important;
+      }
+      
+      /* Make rail buttons touch-friendly on mobile */
+      .rail-btn {
+        width: 48px !important;
+        height: 48px !important;
+        min-width: 48px !important;
+      }
+      
+      .rail-btn img {
+        width: 28px !important;
+        height: 28px !important;
+      }
+      
+      /* Mobile typography */
+      .sidebar .panel {
+        padding: 16px !important;
+        font-size: 13px;
+      }
+      
+      .sidebar h2 {
+        font-size: 15px !important;
+      }
+      
+      .sidebar h3 {
+        font-size: 13px !important;
+      }
+      
+      .sidebar p, .sidebar li {
+        font-size: 12px !important;
+        line-height: 1.6 !important;
+      }
+      
+      /* Mobile select dropdown */
+      #priorityLocationSelect {
+        font-size: 13px !important;
+        padding: 10px 12px !important;
+      }
+      
+      /* Mobile checkbox styling */
+      input[type="checkbox"] {
+        width: 18px !important;
+        height: 18px !important;
+      }
+    }
+    
+    .debug-panel{
+      display: none !important;
+      position:fixed;left:8px;bottom:8px;z-index:9999;
+      max-width:320px;max-height:40vh;overflow:auto;
+      background:#fff;border:1px solid #ddd;border-radius:8px;
+      box-shadow:0 2px 10px rgba(0,0,0,.08);
+      padding:8px;font:12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif
+    }
+    .debug-panel h4{margin:0 0 6px 0;font-size:12px}
+    
+    /* Disclaimer styling */
+    .disclaimer__content{
+      max-height: 470px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+    
+    @media (max-width: 767px) {
+      .disclaimer__content {
+        max-height: 60vh;
+      }
+    }
+    
+    .disclaimer__item{
+      margin-bottom: 16px;
+    }
+    .disclaimer__item:last-child{
+      margin-bottom: 0;
+    }
+    .disclaimer__item h3{
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+      margin: 0 0 6px 0;
+    }
+    .disclaimer__item p{
+      font-size: 13px;
+      line-height: 1.6;
+      color: #4b5563;
+      margin: 0;
+    }
+    
+    /* Simple PLOS Bar Chart */
+    .plos-chart-section {
+      margin-top: 16px;
+      display: none;
+    }
+    
+    .plos-chart-section.active {
+      display: block;
+    }
+    
+    .plos-chart-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    /* Range Slider */
+    .plos-slider-container {
+      position: relative;
+      height: 30px;
+      margin-bottom: 20px;
+      padding: 0 4px;
+    }
+    
+    .plos-slider-track {
+      position: absolute;
+      top: 13px;
+      left: 4px;
+      right: 4px;
+      height: 4px;
+      background: #ddd;
+      border-radius: 2px;
+    }
+    
+    .plos-slider-range {
+      position: absolute;
+      height: 100%;
+      background: #4a90e2;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+    
+    .plos-slider-handle {
+      position: absolute;
+      top: 7px;
+      width: 16px;
+      height: 16px;
+      background: #4a90e2;
+      border: 2px solid white;
+      border-radius: 50%;
+      cursor: grab;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      transform: translateX(-8px);
+      z-index: 10;
+    }
+    
+    .plos-slider-handle:active {
+      cursor: grabbing;
+    }
+    
+    .plos-bars-container {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      height: 120px;
+      gap: 4px;
+      padding: 0 4px;
+      margin-top: 8px;
+    }
+    
+    .plos-bar-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    
+    .plos-bar-column {
+      width: 100%;
+      border-radius: 2px 2px 0 0;
+      transition: opacity 0.2s;
+      min-height: 2px;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    
+    .plos-bar-item.dimmed .plos-bar-column {
+      opacity: 0.2;
+    }
+    
+    .plos-bar-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #555;
+      text-align: center;
+    }
+    
+    .plos-bar-value {
+      font-size: 8px;
+      color: #999;
+      text-align: center;
+      line-height: 1.2;
+    }
+    
+    /* Map Legends in Sidebar */
+    .map-legend {
+      margin-top: 16px;
+      background: white;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+      display: none;
+    }
+    
+    .map-legend.active {
+      display: block;
+    }
+    
+    /* Data Source Attribution styling */
+    .map-legend[id$="Source"] {
+      background: #f8f9fa;
+      border-left: 3px solid #4a90e2;
+      border: 1px solid #e0e0e0;
+      border-left: 3px solid #4a90e2;
+    }
+    
+    .map-legend[id$="Source"] .legend-title {
+      color: #4a90e2;
+    }
+    
+    .map-legend[id$="Source"] p {
+      font-size: 11px;
+      color: #555;
+      line-height: 1.5;
+      margin: 0;
+    }
+    
+    .map-legend[id$="Source"] strong {
+      color: #2c3e50;
+      font-weight: 600;
+    }
+    
+    .legend-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    
+    .legend-gradient {
+      height: 20px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #666;
+    }
+    
+    .legend-items {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+    }
+    
+    .legend-color-box {
+      width: 24px;
+      height: 16px;
+      border-radius: 3px;
+      border: 1px solid rgba(0,0,0,0.1);
+      flex-shrink: 0;
+    }
+    
+    .legend-label {
+      color: #333;
+      font-weight: 500;
+      flex: 1;
+    }
+    
+    .legend-value {
+      color: #666;
+      font-size: 9px;
+      margin-left: auto;
+    }
+    
+    /* Mobile menu button */
+    .mobile-menu-btn {
+      display: none;
+      position: fixed;
+      top: 12px;
+      left: 16px;
+      z-index: 50;
+      width: 40px;
+      height: 40px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    @media (max-width: 767px) {
+      .mobile-menu-btn {
+        display: flex;
+      }
+    }
+    
+    .hamburger {
+      width: 20px;
+      height: 14px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    
+    .hamburger span {
+      display: block;
+      height: 2px;
+      width: 100%;
+      background: #374151;
+      border-radius: 2px;
+      transition: all 0.3s ease;
+    }
+    
+    .mobile-menu-btn.open .hamburger span:nth-child(1) {
+      transform: translateY(6px) rotate(45deg);
+    }
+    
+    .mobile-menu-btn.open .hamburger span:nth-child(2) {
+      opacity: 0;
+    }
+    
+    .mobile-menu-btn.open .hamburger span:nth-child(3) {
+      transform: translateY(-6px) rotate(-45deg);
+    }
+
+    /* ── Agent Analyst Panel ───────────────────────────────────────── */
+    .ai-chip {
+      padding: 4px 9px; font-size: 10px; border: 1px solid #d1d5db;
+      border-radius: 20px; background: #f9fafb; color: #374151;
+      cursor: pointer; transition: background .12s, border-color .12s; white-space: nowrap;
+    }
+    .ai-chip:hover { background: #f3f4f6; border-color: #9ca3af; color: #111827; }
+    .ai-question-input { width:100%; padding:8px 10px; font-size:11px; border:1px solid #d1d5db; border-radius:6px; resize:vertical; min-height:64px; font-family:inherit; line-height:1.5; box-sizing:border-box; }
+    .ai-question-input:focus { border-color:#232323; box-shadow:0 0 0 2px rgba(99,102,241,.15); outline:none; }
+    .ai-analyze-btn { width:100%; padding:8px 12px; background:#1a1a1a; color:#fff; border:none; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:background .15s; }
+    .ai-analyze-btn:hover:not(:disabled) { background:#374151; }
+    .ai-analyze-btn:disabled { background:#9ca3af; cursor:not-allowed; }
+    .ai-clear-btn { padding:5px 10px; background:transparent; border:1px solid #d1d5db; border-radius:6px; font-size:11px; cursor:pointer; color:#6b7280; }
+    .ai-clear-btn:hover { background:#f3f4f6; }
+    .ai-spinner { width:12px; height:12px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:ai-spin .6s linear infinite; display:none; }
+    @keyframes ai-spin { to { transform: rotate(360deg); } }
+    .ai-analyze-btn.loading .ai-spinner { display:block; }
+    .ai-analyze-btn.loading .ai-btn-text { opacity:.7; }
+    .ai-response-box { display:none; font-size:11px; color:#374151; line-height:1.6; }
+    .ai-response-box.active { display:block; }
+    .ai-section-title { font-size:9px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.5px; margin:10px 0 4px; }
+    .ai-rec-item { padding:5px 8px; background:#f8fafc; border-left:2px solid #6366f1; border-radius:0 4px 4px 0; margin-bottom:4px; font-size:10px; }
+    .ai-highlight-legend { display:none; align-items:center; gap:6px; font-size:10px; color:#475569; padding:5px 8px; background:#f8fafc; border-radius:6px; margin-bottom:6px; }
+    .ai-highlight-legend.active { display:flex; }
+    .ai-bar-chart { display:none; }
+    .ai-bar-chart.active { display:block; }
+    .ai-bar-chart-title { font-size:9px; color:#94a3b8; text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; font-weight:700; }
+    .ai-bars-outer { display:flex; gap:3px; align-items:flex-end; height:60px; }
+    .ai-bar-col { display:flex; flex-direction:column; align-items:center; flex:1; }
+    .ai-bar-fill { width:100%; background:#cbd5e1; border-radius:2px 2px 0 0; min-height:3px; }
+    .ai-bar-col.is-peak .ai-bar-fill { background:#f522a4; }
+    .ai-bar-lbl { font-size:7px; color:#94a3b8; margin-top:2px; }
+  </style>
+</head>
+
+<body class="h-screen w-screen overflow-hidden bg-neutral-50">
+  
+  <!-- Mobile Menu Button -->
+  <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
+    <div class="hamburger">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </button>
+  
+  <!-- Backdrop for mobile -->
+  <div class="backdrop" id="backdrop"></div>
+  
+  <!-- Header stretched across the top -->
+  <header class="fixed top-0 left-0 right-0 flex items-center justify-between gap-3 p-4 border-b-2 border-black bg-white z-20">
+    <div class="flex items-center gap-3">
+      <div id="brandLogo" class="shrink-0 grid place-items-center h-10 w-10 rounded-lg bg-white text-white font-bold cursor-pointer md:block hidden" title="Collapse/Expand">
+        <img src="./src/assets/MIT.svg" class="mr-[-40px] scale-[1.3] translate-y-2" > >
+      </div>
+      <div class="brand-text flex items-center gap-3">
+        <img src="./src/assets/SBX.png" class="h-6 md:h-8 md:ml-[55px] md:scale-[1.3]" style="object-fit: contain;"/>
+      </div>
+    </div>
+    <div class="flex items-center">
+      <img src="./src/assets/People_S.png" class="h-6 md:h-8 md:mr-[175px] md:scale-[1.4]" style="object-fit: contain;"/>
+    </div>
+  </header>
+
+  <!-- Main content area: sidebar + map -->
+  <div class="relative h-full w-full overflow-hidden">
+    <!-- Map - Fixed position, always full screen, behind sidebar -->
+    <div id="map"></div>
+    
+    <!-- Sidebar - Fixed position, overlays map -->
+    <aside id="sidebar" class="sidebar bg-white border-r border-neutral-200 shadow-sm flex">
+      <!-- Expand/collapse bar - extends to bottom (hidden on mobile) -->
+      <div class="expand-bar" title="Click to expand/collapse sidebar"></div>
+      
+      <nav class="rail-justify flex flex-col items-center gap-2 p-3 border-r border-neutral-200" role="tablist" aria-orientation="vertical">
+        <button class="rail-btn h-10 w-10 rounded-lg border border-neutral-300 bg-white text-sm font-bold aria-selected:bg-[#c0c0c0] aria-selected:text-white flex items-center justify-center" aria-selected="true" data-tab="background" role="tab" aria-controls="background" title="Background"> <img src="./src/assets/home.svg" alt="Background" class="w-8 h-8"></button>
+        <button class="rail-btn h-10 w-10 rounded-lg border border-neutral-300 bg-white text-sm font-bold aria-selected:bg-[#c0c0c0] aria-selected:text-white flex items-center justify-center" data-tab="traffic" role="tab" aria-controls="traffic" title="Traffic Data"><img src="./src/assets/map.svg" alt="Traffic" class="w-8 h-8"></button>
+        <button class="rail-btn h-10 w-10 rounded-lg border border-neutral-300 bg-white text-sm font-bold aria-selected:bg-[#c0c0c0] aria-selected:text-white flex items-center justify-center" data-tab="ai_analyst" role="tab" aria-controls="ai_analyst" title="Agent Analyst">
+          <img src="./src/assets/ai.svg" alt="Agent Analyst" class="w-8 h-8">
+        </button>
+        <button class="rail-btn h-10 w-10 rounded-lg border border-neutral-300 bg-white text-sm font-bold aria-selected:bg-[#c0c0c0] aria-selected:text-white flex items-center justify-center" data-tab="intervention" role="tab" aria-controls="intervention" title="Intervention"><img src="./src/assets/pencil.svg" alt="Intervention" class="w-8 h-8"></button>
+      </nav>
+
+      <section class="panel flex-1 overflow-y-auto p-4">
+          <!-- Background Tab -->
+          <div id="background" class="tab-content space-y-4 text-xs" role="tabpanel">
+            <div>
+              <h2 class="text-sm font-bold mb-2">Background</h2>
+              <p class="text-justify leading-relaxed">
+                The South Bronx is shaped by high population density, strong reliance on walking and public transit,
+                and the close coexistence of residential, industrial, and transportation infrastructure. Despite high
+                pedestrian demand, many streets remain unsafe or uncomfortable due to fast-moving traffic, limited
+                pedestrian amenities, and infrastructural barriers such as highways and toll roads. These conditions
+                restrict access to services, waterfronts, and public space, making pedestrian analysis essential to
+                identifying spatial inequities and design opportunities.
+              </p>
+            </div>
+            
+            <div>
+              <h2 class="text-sm font-bold mb-2">Objectives</h2>
+              <p class="text-justify leading-relaxed">
+                  This studio project analyzes pedestrian movement, traffic, and land use in the South Bronx to inform targeted
+                  urban design strategies. By integrating pedestrian density, transit accessibility, and network
+                  connectivity, the studio identifies priority corridors and underutilized areas for activation. The
+                  goal is to improve walkability, safety, and environmental quality while strengthening connections
+                  between neighborhoods, transit, commercial areas, and the waterfront.
+              </p>
+            </div>
+          </div>
+
+          <!-- Traffic Data Tab -->
+          <div id="traffic" class="tab-content hidden space-y-4 text-xs" role="tabpanel">
+            <div>
+              <h2 class="text-sm font-bold mb-3">Traffic Data</h2>
+              <p class="text-justify leading-relaxed mb-4">
+                This section provides access to traffic and pedestrian density data for the South Bronx area.
+                Use the layer controls below to visualize different data types on the map.
+              </p>
+              
+              <h3 class="text-xs font-semibold mb-2">Layers</h3>
+              <ul class="space-y-2">
+                <li class="flex items-center gap-2">
+                  <input id="cbPeds" type="checkbox" class="h-4 w-4">
+                  <span>Pedestrian Density</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <input id="cbVehicles" type="checkbox" class="h-4 w-4">
+                  <span>Vehicle Density</span>
+                </li>
+                <li class="flex items-center gap-2">
+                  <input id="cbPLOS" type="checkbox" class="h-4 w-4">
+                  <span>Pedestrian Level of Service</span>
+                </li>
+              </ul>
+              
+              <!-- Pedestrian Density Legend -->
+              <div id="pedestrianLegend" class="map-legend">
+                <div class="legend-title">Pedestrian Density</div>
+                <div class="legend-gradient" style="background: linear-gradient(to right, #cce5ff, #66afff, #0079ff, #0047b3, #001a66, #000829);"></div>
+                <div class="legend-labels">
+                  <span>Low (&le;1,000)</span>
+                  <span>High (&ge;100,000)</span>
+                </div>
+              </div>
+              
+              <!-- Vehicle Traffic Legend -->
+              <div id="vehicleLegend" class="map-legend">
+                <div class="legend-title">Vehicle Traffic</div>
+                <div class="legend-gradient" style="background: linear-gradient(to right, #FFF5F2,#FFE0D9,#FFC2B3,#FFA38C,#FF8566,#FF664D,#FF4D33,#FF3319,#E62600,#CC1F00,#991700,#660D00);"></div>
+                <div class="legend-labels">
+                  <span>Low (&le;100)</span>
+                  <span>High (&ge;1,000)</span>
+                </div>
+              </div>
+              
+              <!-- PLOS Legend -->
+              <div id="plosLegend" class="map-legend">
+                <div class="legend-title">Level of Service</div>
+                <div class="legend-items">
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #00CC00;"></div>
+                    <span class="legend-label">A - Excellent</span>
+                    <span class="legend-value">0.0-1.5</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #77CC00;"></div>
+                    <span class="legend-label">B - Good</span>
+                    <span class="legend-value">1.5-2.5</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #CCCC00;"></div>
+                    <span class="legend-label">C - Fair</span>
+                    <span class="legend-value">2.5-3.5</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #FFCC00;"></div>
+                    <span class="legend-label">D - Poor</span>
+                    <span class="legend-value">3.5-4.5</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #FF9900;"></div>
+                    <span class="legend-label">E+ - Very Poor</span>
+                    <span class="legend-value">4.5-5.5</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #FF6600;"></div>
+                    <span class="legend-label">E - Critical</span>
+                    <span class="legend-value">5.5-6.5</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #FF3300;"></div>
+                    <span class="legend-label">F+ - Failing</span>
+                    <span class="legend-value">6.5-10</span>
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #CC0000;"></div>
+                    <span class="legend-label">F - Redesign Required</span>
+                    <span class="legend-value">10.0+</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- PLOS Chart Section -->
+              <div id="plosChartSection" class="plos-chart-section">
+                <div class="plos-chart-title">PLOS Distribution</div>
+                
+                <!-- Range Slider -->
+                <div class="plos-slider-container">
+                  <div class="plos-slider-track">
+                    <div class="plos-slider-range" id="plosSliderRange"></div>
+                  </div>
+                  <div class="plos-slider-handle" id="plosHandleLeft"></div>
+                  <div class="plos-slider-handle" id="plosHandleRight"></div>
+                </div>
+                
+                <div class="plos-bars-container" id="plosBarsContainer">
+                  <!-- Bars will be generated here -->
+                </div>
+              </div>
+              
+              <!-- Data Source Attribution Sections -->
+              <div id="pedestrianSource" class="map-legend">
+                <div class="legend-title">Data Source</div>
+                <p>
+                  Pedestrian density data scraped and developed from <strong>NYC Department of City Planning</strong> and <strong>NYC Open Data</strong> datasets. Values represent estimated daily pedestrian volumes based on sidewalk counts and accessibility analysis.
+                </p>
+              </div>
+              
+              <div id="vehicleSource" class="map-legend">
+                <div class="legend-title">Data Source</div>
+                <p>
+                  Vehicle traffic density data scraped and developed from <strong>NYC Department of Transportation (DOT)</strong> and <strong>NYC Open Data</strong> traffic count datasets. Values represent average vehicle volumes during peak hours.
+                </p>
+              </div>
+              
+              <div id="plosSource" class="map-legend">
+                <div class="legend-title">Data Source</div>
+                <p>
+                  Pedestrian Level of Service (PLOS) calculated using Highway Capacity Manual methodology, incorporating sidewalk width, pedestrian volume, traffic speed, and street conditions data from <strong>NYC Open Data</strong> and field surveys.
+                </p>
+              </div>
+              
+              <div class="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+                <p class="text-xs text-gray-600">
+                  <strong>Note:</strong> Check the boxes above to toggle data layers on the map. 
+                  Pedestrian density is shown with a color gradient from yellow (low) to dark brown (high density).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Analyst Tab -->
+          <div id="ai_analyst" class="tab-content hidden space-y-4 text-xs" role="tabpanel">
+            <div>
+              <h2 class="text-sm font-bold mb-3">AI Analyst</h2>
+              <p class="text-justify leading-relaxed mb-3">Ask questions about the traffic and pedestrian data. The AI will analyze the datasets and highlight relevant segments on the map.</p>
+              <div class="mb-2">
+                <label class="block font-semibold text-gray-700 mb-1 text-xs">Question</label>
+                <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px;">
+                  <button class="ai-chip" data-q="Which segments have the highest vehicle traffic at peak hour, and what improvements are recommended?">Peak vehicle traffic</button>
+                  <button class="ai-chip" data-q="Which segments have the highest pedestrian density, and what improvements are recommended?">Highest pedestrian density</button>
+                  <button class="ai-chip" data-q="Which segments have the worst PLOS grade, and how can pedestrian level of service be improved?">Worst PLOS grade</button>
+                  <button class="ai-chip" data-q="Analyze all three datasets — vehicle traffic, pedestrian density, and PLOS — and identify the most critical segments.">Full analysis</button>
+                </div>
+                <textarea id="aiQuestion" class="ai-question-input" placeholder="e.g. Which lane segments have the highest peak hour vehicle traffic, and what can be improved?"></textarea>
+              </div>
+              <div class="flex items-center gap-2 mb-3">
+                <button id="aiAnalyzeBtn" class="ai-analyze-btn flex-1">
+                  <div class="ai-spinner"></div>
+                  <span class="ai-btn-text">Analyze Map</span>
+                </button>
+                <button id="aiClearBtn" class="ai-clear-btn">Clear</button>
+              </div>
+              <div id="aiHighlightLegend" class="ai-highlight-legend">
+                <span style="width:10px;height:10px;border-radius:2px;background:#f522a4;flex-shrink:0;display:inline-block;"></span>
+                <span id="aiHighlightLegendText"></span>
+              </div>
+              <div id="aiResponseBox" class="ai-response-box"></div>
+            </div>
+          </div>
+
+          <!-- Intervention Tab -->
+          <div id="intervention" class="tab-content hidden space-y-4 text-xs" role="tabpanel">
+            <div>
+              <h2 class="text-sm font-bold mb-3">Intervention Strategies</h2>
+              <p class="text-justify leading-relaxed mb-4">
+                Based on pedestrian movement patterns and traffic data analysis, this section outlines
+                potential intervention strategies for improving walkability and safety in the South Bronx.
+              </p>
+
+              <h3 class="text-xs font-semibold mb-2">Priority Locations</h3>
+              <p class="text-justify leading-relaxed mb-3">
+                Select a priority location to view detailed intervention recommendations and design strategies
+                for improving pedestrian infrastructure and safety.
+              </p>
+
+              <div class="mb-4">
+                <label for="priorityLocationSelect" class="block text-xs font-medium text-gray-700 mb-2">
+                  Select Location
+                </label>
+                <select
+                  id="priorityLocationSelect"
+                  class="w-full px-3 py-2 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                >
+                  <option value="">-- Choose a location --</option>
+                  <option value="lincoln-ave">Lincoln Avenue</option>
+                  <option value="138-st">138th Street</option>
+                  <option value="134-st">134th Street</option>
+                  <option value="bruckner-blvd">Bruckner Boulevard</option>
+                  <option value="e133-st">E 133rd Street</option>
+                  <option value="132nd-st">132nd Street</option>
+                </select>
+              </div>
+
+              <!-- Location Details Container (will be populated when location is selected) -->
+              <div id="locationDetails" class="hidden">
+                <div class="p-3 bg-blue-50 rounded-lg border border-blue-200 mb-3">
+                  <h4 class="text-xs font-semibold text-blue-900 mb-1" id="locationName"></h4>
+                  <p class="text-xs text-blue-800" id="locationDescription"></p>
+                </div>
+
+                <h3 class="text-xs font-semibold mb-2 mt-3">Recommended Interventions</h3>
+                <ul id="interventionsList" class="list-disc pl-5 space-y-1 text-xs text-gray-700">
+                  <!-- Will be populated dynamically -->
+                </ul>
+
+                <h3 class="text-xs font-semibold mb-2 mt-3">Design Strategies</h3>
+                <ul id="strategiesList" class="list-disc pl-5 space-y-1 text-xs text-gray-700">
+                  <!-- Will be populated dynamically -->
+                </ul>
+              </div>
+
+              <!-- Default message when no location is selected -->
+              <div id="defaultMessage" class="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+                <p class="text-xs text-gray-600">
+                  Select a priority location from the dropdown above to view specific intervention strategies
+                  and design recommendations.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+    </aside>
+  </div>
+
+  <script>
+    const sidebar = document.getElementById('sidebar');
+    const brandLogo = document.getElementById('brandLogo');
+    const expandBar = document.querySelector('.expand-bar');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const backdrop = document.getElementById('backdrop');
+    
+    const saved = localStorage.getItem('sidebar-collapsed');
+    if (saved === 'true') sidebar.classList.add('collapsed');
+    
+    // Function to check if mobile
+    const isMobile = () => window.innerWidth <= 767;
+    
+    // Function to toggle sidebar
+    const toggleSidebar = () => {
+      if (isMobile()) {
+        // Mobile: toggle open class and backdrop
+        sidebar.classList.toggle('open');
+        backdrop.classList.toggle('show');
+        mobileMenuBtn.classList.toggle('open');
+      } else {
+        // Desktop: toggle collapsed class
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
+      }
+    };
+    
+    // Click logo to toggle (desktop only)
+    brandLogo?.addEventListener('click', () => {
+      if (!isMobile()) toggleSidebar();
+    });
+    
+    // Click thin expand bar to toggle (desktop only)
+    expandBar?.addEventListener('click', () => {
+      if (!isMobile()) toggleSidebar();
+    });
+    
+    // Mobile menu button
+    mobileMenuBtn?.addEventListener('click', toggleSidebar);
+    
+    // Click backdrop to close sidebar (mobile only)
+    backdrop?.addEventListener('click', () => {
+      if (isMobile()) {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('show');
+        mobileMenuBtn.classList.remove('open');
+      }
+    });
+
+    const railBtns = Array.from(document.querySelectorAll('.rail-btn'));
+    const panels = Array.from(document.querySelectorAll('.tab-content'));
+    
+    function activateTab(id){
+      // Auto-expand sidebar when clicking a button
+      if (!isMobile() && sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebar-collapsed', 'false');
+      }
+      
+      if (isMobile() && !sidebar.classList.contains('open')) {
+        sidebar.classList.add('open');
+        backdrop.classList.add('show');
+        mobileMenuBtn.classList.add('open');
+      }
+      
+      railBtns.forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === id)));
+      panels.forEach(p => p.classList.toggle('hidden', p.id !== id));
+    }
+    
+    railBtns.forEach(b => b.addEventListener('click', () => activateTab(b.dataset.tab)));
+    activateTab('background');
+  </script>
+
+  <!-- Using Mapbox GL JS (supports both Mapbox and MapTiler) -->
+
+  <script>
+    // Minimal debug
+    const dbg = document.createElement('div');
+    dbg.className = 'debug-panel';
+    dbg.innerHTML = '<h4>Map debug</h4><div id="debugLog"></div>';
+    document.body.appendChild(dbg);
+    function debugLog(msg){
+      const el = document.getElementById('debugLog');
+      const p = document.createElement('div');
+      p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      el.appendChild(p); el.scrollTop = el.scrollHeight; console.log(msg);
+    }
+
+    // Mapbox access token should be provided through local config or environment
+    const MAPBOX_ACCESS_TOKEN = window.MAPBOX_ACCESS_TOKEN || '';
+    mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
+    if (!MAPBOX_ACCESS_TOKEN) {
+      console.warn('Mapbox access token is missing. Set window.MAPBOX_ACCESS_TOKEN in config.js.');
+    }
+
+    // MapTiler API key should be provided through local config or environment
+    const MAPTILER_KEY = window.MAPTILER_KEY || '';
+    const DEFAULT_BASEMAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+    const BASEMAP_STYLE = MAPTILER_KEY
+      ? `https://api.maptiler.com/maps/0199c990-d557-79f4-a316-082733fdc6a6/style.json?key=${MAPTILER_KEY}`
+      : DEFAULT_BASEMAP_STYLE;
+
+    // --- HYBRID LAYER MANAGER (Mapbox Tilesets + MapTiler Basemaps) ---
+    class HybridLayerManager {
+      constructor(map){
+        this.map = map;
+        this.layers = {};
+        this.visibility = {};
+        
+        // Re-add layers when style changes
+        map.on('styledata', () => {
+          setTimeout(() => this.rebuild(), 100);
+        });
+      }
+      
+      addTilesetLayer({key, tilesetId, layerId, sourceLayer, type='line', paint={}, layout={}}){
+        this.layers[key] = { 
+          tilesetId, 
+          layerId, 
+          sourceLayer, 
+          type, 
+          paint: {...paint},
+          layout: {...layout}
+        };
+        this.visibility[key] = true;
+        this._add(key);
+      }
+      
+      _add(key){
+        const l = this.layers[key];
+        if (!l) return;
+        if (!MAPBOX_ACCESS_TOKEN) {
+          debugLog(`skipping ${key}: MAPBOX_ACCESS_TOKEN is missing`);
+          return;
+        }
+        
+        // Remove existing layer if it exists
+        if (this.map.getLayer(l.layerId)) {
+          this.map.removeLayer(l.layerId);
+        }
+        
+        // Check if source already exists
+        const sourceId = `${key}-source`;
+        if (!this.map.getSource(sourceId)) {
+          this.map.addSource(sourceId, {
+            type: 'vector',
+            url: `mapbox://${l.tilesetId}`
+          });
+        }
+        
+        // Add layer
+        this.map.addLayer({
+          id: l.layerId,
+          type: l.type,
+          source: sourceId,
+          'source-layer': l.sourceLayer,
+          layout: {
+            ...l.layout,
+            visibility: this.visibility[key] ? 'visible' : 'none'
+          },
+          paint: l.paint
+        });
+        
+        debugLog(`added tileset layer: ${key} (${l.tilesetId})`);
+      }
+      
+      setVisible(key, visible){
+        const l = this.layers[key];
+        if (!l || !this.map.getLayer(l.layerId)) return;
+        
+        this.visibility[key] = visible;
+        this.map.setLayoutProperty(l.layerId, 'visibility', visible ? 'visible' : 'none');
+      }
+      
+      rebuild(){
+        Object.keys(this.layers).forEach(key => this._add(key));
+        debugLog('Tileset layers rebuilt after basemap change');
+      }
+    }
+
+    // Map initialization with MapTiler basemap
+    debugLog('Creating map...');
+    const map = new mapboxgl.Map({
+      container: "map",
+      style: BASEMAP_STYLE,
+      center: [-73.923, 40.808],
+      zoom: 15,
+      pitch: 50,
+      bearing: 8.6,
+      attributionControl: false
+    });
+    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+    map.addControl(new mapboxgl.AttributionControl({ compact: true }));
+
+    const layerManager = new HybridLayerManager(map);
+
+    // Define your Mapbox tileset layers with correct color gradients
+    const PEDS_LAYER = {
+      key: 'peds',
+      tilesetId: 'danielharianto.0s9uqe8g',
+      layerId: 'peds-layer',
+      sourceLayer: 'pedestrian_density-bed9gf',
+      type: 'line',
+      paint: {
+        'line-color': [
+          'step',
+          ['get', 'Btw_Rational'],
+          '#cce5ff',
+          3.470, '#99caff',
+          9.920, '#66afff',
+          16.430, '#3394ff',
+          23.720, '#0079ff',
+          31.130, '#005fd9',
+          39.180, '#0047b3',
+          47.010, '#00308c',
+          54.760, '#001a66',
+          64.030, '#001452',
+          74.250, '#000e3d',
+          84.600, '#000829'
+        ],
+        'line-width': 8,
+        'line-opacity': 0.9
+      },
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      }
+    };
+
+    const VEHICLES_LAYER = {
+      key: 'vehicles',
+      tilesetId: 'danielharianto.0iqfake1',
+      layerId: 'vehicles-layer',
+      sourceLayer: 'turck_density_upd-di2urp',
+      type: 'line',
+      paint: {
+        'line-color': [
+          'step',
+          ['get', '11:00:00'],
+          '#FFF5F2',  // 0 - 3.5: Very light red
+          3.470, '#FFE0D9',  // 3.5 - 9.9: Light red
+          9.920, '#FFC2B3',  // 9.9 - 16.4: Soft salmon
+          16.430, '#FFA38C',  // 16.4 - 23.7: Light coral
+          23.720, '#FF8566',  // 23.7 - 31.1: Coral
+          31.130, '#FF664D',  // 31.1 - 39.2: Warm red
+          39.180, '#FF4D33',  // 39.2 - 47: Strong red
+          47.010, '#FF3319',  // 47 - 54.8: Bright red
+          54.760, '#E62600',  // 54.8 - 64: Deep red
+          64.030, '#CC1F00',  // 64 - 74.3: Dark red
+          74.250, '#991700',  // 74.3 - 84.6: Darker red
+          84.600, '#660D00'   // 84.6+: Very dark red
+        ],
+        'line-width': 8,
+        'line-opacity': 0.9
+      },
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      }
+    };
+
+    const PLOS_LAYER = {
+      key: 'plos',
+      tilesetId: 'danielharianto.dq3dkrke',
+      sourceLayer: 'pedestrian_plos-cdosep'
+    };
+    
+    // Intervention POI Layer
+    const POI_LAYER = {
+      key: 'poi',
+      tilesetId: 'danielharianto.651musfr',
+      layerId: 'poi-layer',
+      sourceLayer: 'poi_dot-b7x2wy'
+    };
+    
+    // Create 8 separate layers for each PLOS grade
+    const PLOS_GRADE_LAYERS = [
+      {
+        key: 'plos-A',
+        layerId: 'plos-layer-A',
+        grade: 'A',
+        color: '#00CC00',  // Green
+        min: 0,
+        max: 1.5
+      },
+      {
+        key: 'plos-B',
+        layerId: 'plos-layer-B',
+        grade: 'B',
+        color: '#77CC00',  // Yellow-Green
+        min: 1.5,
+        max: 2.5
+      },
+      {
+        key: 'plos-C',
+        layerId: 'plos-layer-C',
+        grade: 'C',
+        color: '#CCCC00',  // Yellow
+        min: 2.5,
+        max: 3.5
+      },
+      {
+        key: 'plos-D',
+        layerId: 'plos-layer-D',
+        grade: 'D',
+        color: '#FFCC00',  // Yellow-Orange
+        min: 3.5,
+        max: 4.5
+      },
+      {
+        key: 'plos-E+',
+        layerId: 'plos-layer-E-plus',
+        grade: 'E+',
+        color: '#FF9900',  // Orange
+        min: 4.5,
+        max: 5.5
+      },
+      {
+        key: 'plos-E',
+        layerId: 'plos-layer-E',
+        grade: 'E',
+        color: '#FF6600',  // Orange-Red
+        min: 5.5,
+        max: 6.5
+      },
+      {
+        key: 'plos-F+',
+        layerId: 'plos-layer-F-plus',
+        grade: 'F+',
+        color: '#FF3300',  // Red
+        min: 6.5,
+        max: 10.0
+      },
+      {
+        key: 'plos-F',
+        layerId: 'plos-layer-F',
+        grade: 'F',
+        color: '#CC0000',  // Dark Red
+        min: 10.0,
+        max: 100
+      }
+    ];
+
+    // PLOS Chart functionality
+    const plosChartSection = document.getElementById('plosChartSection');
+    const plosBarsContainer = document.getElementById('plosBarsContainer');
+    const plosHandleLeft = document.getElementById('plosHandleLeft');
+    const plosHandleRight = document.getElementById('plosHandleRight');
+    const plosSliderRange = document.getElementById('plosSliderRange');
+    
+    let plosData = [];
+    let leftIndex = 0;
+    let rightIndex = 7;
+    let isDraggingLeft = false;
+    let isDraggingRight = false;
+    let sliderTrackRect = null;
+    
+    // PLOS grade definitions with colors
+    const PLOS_GRADES = [
+      { grade: 'A', min: 0, max: 1.5, color: '#00CC00', label: 'A' },
+      { grade: 'B', min: 1.5, max: 2.5, color: '#77CC00', label: 'B' },
+      { grade: 'C', min: 2.5, max: 3.5, color: '#CCCC00', label: 'C' },
+      { grade: 'D', min: 3.5, max: 4.5, color: '#FFCC00', label: 'D' },
+      { grade: 'E+', min: 4.5, max: 5.5, color: '#FF9900', label: 'E+' },
+      { grade: 'E', min: 5.5, max: 6.5, color: '#FF6600', label: 'E' },
+      { grade: 'F+', min: 6.5, max: 10.0, color: '#FF3300', label: 'F+' },
+      { grade: 'F', min: 10.0, max: 100, color: '#CC0000', label: 'F' }
+    ];
+    
+    // Calculate PLOS data from map features
+    function calculatePlosData() {
+      const features = map.querySourceFeatures('plos-source', {
+        sourceLayer: PLOS_LAYER.sourceLayer
+      });
+      
+      const totals = {};
+      PLOS_GRADES.forEach(g => totals[g.grade] = 0);
+      
+      features.forEach(feature => {
+        const plosValue = parseFloat(feature.properties.PLOS_Edit) || 0;
+        const length = parseFloat(feature.properties.__Length) || 0;
+        
+        const grade = PLOS_GRADES.find(g => plosValue >= g.min && plosValue < g.max);
+        if (grade) {
+          totals[grade.grade] += length;
+        }
+      });
+      
+      const totalLength = Object.values(totals).reduce((a, b) => a + b, 0);
+      
+      plosData = PLOS_GRADES.map(g => ({
+        grade: g.grade,
+        label: g.label,
+        color: g.color,
+        length: totals[g.grade],
+        lengthMiles: (totals[g.grade] * 0.000621371).toFixed(1),
+        percent: totalLength > 0 ? ((totals[g.grade] / totalLength) * 100).toFixed(1) : 0
+      }));
+      
+      return plosData;
+    }
+    
+    // Render simple bar chart
+    function renderPlosChart() {
+      plosBarsContainer.innerHTML = '';
+      
+      if (plosData.length === 0) return;
+      
+      const maxLength = Math.max(...plosData.map(d => d.length));
+      const maxBarHeight = 100; // Max height in pixels
+      
+      plosData.forEach((data, index) => {
+        const heightPx = maxLength > 0 ? Math.max(5, (data.length / maxLength) * maxBarHeight) : 5;
+        
+        const barItem = document.createElement('div');
+        barItem.className = 'plos-bar-item';
+        barItem.dataset.index = index;
+        
+        // Apply dimmed state if outside range
+        if (index < leftIndex || index > rightIndex) {
+          barItem.classList.add('dimmed');
+        }
+        
+        const barDiv = document.createElement('div');
+        barDiv.className = 'plos-bar-value';
+        barDiv.innerHTML = `${data.lengthMiles}k<br>${data.percent}%`;
+        
+        const barColumn = document.createElement('div');
+        barColumn.className = 'plos-bar-column';
+        barColumn.style.height = `${heightPx}px`;
+        barColumn.style.backgroundColor = data.color;
+        
+        const labelDiv = document.createElement('div');
+        labelDiv.className = 'plos-bar-label';
+        labelDiv.textContent = data.label;
+        
+        barItem.appendChild(barDiv);
+        barItem.appendChild(barColumn);
+        barItem.appendChild(labelDiv);
+        
+        plosBarsContainer.appendChild(barItem);
+      });
+      
+      updateSliderPosition();
+      
+      // Apply filter after a short delay to ensure layer is ready
+      setTimeout(() => {
+        updatePlosFilter();
+      }, 100);
+      
+      console.log('PLOS chart rendered with', plosData.length, 'bars');
+    }
+    
+    // Update slider positions
+    function updateSliderPosition() {
+      if (!sliderTrackRect || plosData.length === 0) {
+        const track = document.querySelector('.plos-slider-track');
+        if (track) sliderTrackRect = track.getBoundingClientRect();
+        else return;
+      }
+      
+      const trackWidth = sliderTrackRect.width;
+      const stepWidth = trackWidth / (plosData.length - 1);
+      
+      const leftPos = leftIndex * stepWidth;
+      const rightPos = rightIndex * stepWidth;
+      
+      plosHandleLeft.style.left = `${leftPos + 4}px`;
+      plosHandleRight.style.left = `${rightPos + 4}px`;
+      
+      plosSliderRange.style.left = `${leftPos}px`;
+      plosSliderRange.style.width = `${rightPos - leftPos}px`;
+    }
+    
+    // Update PLOS layer visibility based on slider selection
+    function updatePlosFilter() {
+      console.log('Updating PLOS visibility - Range:', leftIndex, 'to', rightIndex);
+      
+      PLOS_GRADE_LAYERS.forEach((gradeLayer, index) => {
+        const layer = map.getLayer(gradeLayer.layerId);
+        if (!layer) {
+          console.warn('Layer not found:', gradeLayer.layerId);
+          return;
+        }
+        
+        // Show if within selected range, hide if outside
+        const shouldShow = index >= leftIndex && index <= rightIndex;
+        const visibility = shouldShow ? 'visible' : 'none';
+        
+        map.setLayoutProperty(gradeLayer.layerId, 'visibility', visibility);
+        
+        console.log(`  Grade ${gradeLayer.grade} (index ${index}):`, shouldShow ? 'VISIBLE' : 'HIDDEN');
+      });
+      
+      // Update bar dimming
+      const bars = plosBarsContainer.querySelectorAll('.plos-bar-item');
+      bars.forEach((bar, index) => {
+        if (index < leftIndex || index > rightIndex) {
+          bar.classList.add('dimmed');
+        } else {
+          bar.classList.remove('dimmed');
+        }
+      });
+    }
+    
+    // Get index from mouse position
+    function getIndexFromPosition(clientX) {
+      if (!sliderTrackRect) return 0;
+      const relativeX = clientX - sliderTrackRect.left;
+      const trackWidth = sliderTrackRect.width;
+      const stepWidth = trackWidth / (plosData.length - 1);
+      const index = Math.round(relativeX / stepWidth);
+      return Math.max(0, Math.min(index, plosData.length - 1));
+    }
+    
+    // Handle mouse move
+    function handleSliderMove(e) {
+      if (!isDraggingLeft && !isDraggingRight) return;
+      
+      const newIndex = getIndexFromPosition(e.clientX);
+      
+      if (isDraggingLeft) {
+        leftIndex = Math.min(newIndex, rightIndex);
+      } else if (isDraggingRight) {
+        rightIndex = Math.max(newIndex, leftIndex);
+      }
+      
+      updateSliderPosition();
+      updatePlosFilter();
+    }
+    
+    function handleSliderUp() {
+      isDraggingLeft = false;
+      isDraggingRight = false;
+    }
+    
+    // Event listeners for handles
+    plosHandleLeft.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isDraggingLeft = true;
+      const track = document.querySelector('.plos-slider-track');
+      sliderTrackRect = track.getBoundingClientRect();
+    });
+    
+    plosHandleRight.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isDraggingRight = true;
+      const track = document.querySelector('.plos-slider-track');
+      sliderTrackRect = track.getBoundingClientRect();
+    });
+    
+    document.addEventListener('mousemove', handleSliderMove);
+    document.addEventListener('mouseup', handleSliderUp);
+
+    map.on('load', () => {
+      // Add all layers in order: Peds, Vehicles, PLOS (8 separate layers)
+      layerManager.addTilesetLayer(PEDS_LAYER);
+      layerManager.addTilesetLayer(VEHICLES_LAYER);
+      
+      // Add source for PLOS data (shared by all 8 layers)
+      if (!map.getSource('plos-source')) {
+        map.addSource('plos-source', {
+          type: 'vector',
+          url: `mapbox://${PLOS_LAYER.tilesetId}`
+        });
+      }
+      
+      // Add 8 separate layers for each PLOS grade
+      PLOS_GRADE_LAYERS.forEach(gradeLayer => {
+        if (map.getLayer(gradeLayer.layerId)) {
+          map.removeLayer(gradeLayer.layerId);
+        }
+        
+        map.addLayer({
+          id: gradeLayer.layerId,
+          type: 'line',
+          source: 'plos-source',
+          'source-layer': PLOS_LAYER.sourceLayer,
+          filter: [
+            'all',
+            ['>=', ['get', 'PLOS_Edit'], gradeLayer.min],
+            ['<', ['get', 'PLOS_Edit'], gradeLayer.max]
+          ],
+          paint: {
+            'line-color': gradeLayer.color,
+            'line-width': 8,
+            'line-opacity': 0.9
+          },
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+            'visibility': 'none' // Start hidden
+          }
+        });
+        
+        console.log('Added PLOS layer:', gradeLayer.layerId, 'for grade', gradeLayer.grade);
+      });
+
+      // Add POI intervention points layer with SVG icon
+      if (!map.getSource('poi-source')) {
+        map.addSource('poi-source', {
+          type: 'vector',
+          url: `mapbox://${POI_LAYER.tilesetId}`
+        });
+      }
+      
+      // Load info.svg icon
+      map.loadImage("./src/assets/info.png", (error, image) => {
+        if (error) {
+          console.error('Error loading info icon:', error);
+          return;
+        }
+        
+        if (!map.hasImage('info-icon')) {
+          map.addImage('info-icon', image);
+        }
+        
+        if (map.getLayer(POI_LAYER.layerId)) {
+          map.removeLayer(POI_LAYER.layerId);
+        }
+        
+        map.addLayer({
+          id: POI_LAYER.layerId,
+          type: 'symbol',
+          source: 'poi-source',
+          'source-layer': POI_LAYER.sourceLayer,
+          layout: {
+            'icon-image': 'info-icon',
+            'icon-size': 0.3,
+            'icon-allow-overlap': true,
+            'visibility': 'none'
+          }
+        });
+        
+        console.log('Added POI icon layer:', POI_LAYER.layerId);
+      });
+
+      // Wire checkboxes to layer visibility
+      const cbPeds = document.getElementById('cbPeds');
+      const cbVehicles = document.getElementById('cbVehicles');
+      const cbPLOS = document.getElementById('cbPLOS');
+
+      const applyLayerVisibility = () => {
+        layerManager.setVisible('peds', cbPeds?.checked);
+        layerManager.setVisible('vehicles', cbVehicles?.checked);
+        
+        // For PLOS, control all 8 grade layers
+        const plosVisible = cbPLOS?.checked;
+        PLOS_GRADE_LAYERS.forEach(gradeLayer => {
+          if (map.getLayer(gradeLayer.layerId)) {
+            map.setLayoutProperty(gradeLayer.layerId, 'visibility', plosVisible ? 'visible' : 'none');
+          }
+        });
+        
+        debugLog(`Layer visibility - Peds: ${cbPeds?.checked}, Vehicles: ${cbVehicles?.checked}, PLOS: ${cbPLOS?.checked}`);
+      };
+
+      // Make checkboxes exclusive - only one can be checked at a time
+      cbPeds?.addEventListener('change', () => {
+        if (cbPeds.checked) {
+          cbVehicles.checked = false;
+          cbPLOS.checked = false;
+          plosChartSection.classList.remove('active');
+        }
+        applyLayerVisibility();
+        updateLegends();
+      });
+      
+      cbVehicles?.addEventListener('change', () => {
+        if (cbVehicles.checked) {
+          cbPeds.checked = false;
+          cbPLOS.checked = false;
+          plosChartSection.classList.remove('active');
+        }
+        applyLayerVisibility();
+        updateLegends();
+      });
+      
+      cbPLOS?.addEventListener('change', () => {
+        if (cbPLOS.checked) {
+          cbPeds.checked = false;
+          cbVehicles.checked = false;
+          
+          // Show PLOS chart and reset slider
+          setTimeout(() => {
+            calculatePlosData();
+            leftIndex = 0;
+            rightIndex = plosData.length - 1;
+            renderPlosChart();
+            plosChartSection.classList.add('active');
+          }, 500);
+        } else {
+          // Hide chart and reset
+          plosChartSection.classList.remove('active');
+          leftIndex = 0;
+          rightIndex = 7;
+        }
+        applyLayerVisibility();
+        updateLegends();
+      });
+
+      applyLayerVisibility();
+      updateLegends();
+      
+      // Add popup handlers for all layers
+      setupPopupHandlers();
+      
+      // AI highlight source and layer
+      map.addSource('ai-highlight-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
+      map.addLayer({
+        id: 'ai-highlight-layer',
+        type: 'line',
+        source: 'ai-highlight-source',
+        paint: { 'line-color': '#f522a4', 'line-width': 6, 'line-opacity': 0.95 },
+        layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': 'none' }
+      });
+
+      debugLog('Map loaded with MapTiler basemap and Mapbox tileset layers');
+    });
+    
+    // Update map legends based on active layer
+    function updateLegends() {
+      const pedestrianLegend = document.getElementById('pedestrianLegend');
+      const vehicleLegend = document.getElementById('vehicleLegend');
+      const plosLegend = document.getElementById('plosLegend');
+      const pedestrianSource = document.getElementById('pedestrianSource');
+      const vehicleSource = document.getElementById('vehicleSource');
+      const plosSource = document.getElementById('plosSource');
+      const cbPeds = document.getElementById('cbPeds');
+      const cbVehicles = document.getElementById('cbVehicles');
+      const cbPLOS = document.getElementById('cbPLOS');
+      
+      console.log('updateLegends called');
+      console.log('Pedestrian checked:', cbPeds?.checked);
+      console.log('Vehicle checked:', cbVehicles?.checked);
+      console.log('PLOS checked:', cbPLOS?.checked);
+      console.log('Legend elements:', {pedestrianLegend, vehicleLegend, plosLegend});
+      
+      // Hide all legends and sources
+      if (pedestrianLegend) pedestrianLegend.classList.remove('active');
+      if (vehicleLegend) vehicleLegend.classList.remove('active');
+      if (plosLegend) plosLegend.classList.remove('active');
+      if (pedestrianSource) pedestrianSource.classList.remove('active');
+      if (vehicleSource) vehicleSource.classList.remove('active');
+      if (plosSource) plosSource.classList.remove('active');
+      
+      // Show appropriate legend and source based on active layer
+      if (cbPeds?.checked) {
+        if (pedestrianLegend) pedestrianLegend.classList.add('active');
+        if (pedestrianSource) pedestrianSource.classList.add('active');
+        console.log('Showing pedestrian legend and source');
+      } else if (cbVehicles?.checked) {
+        if (vehicleLegend) vehicleLegend.classList.add('active');
+        if (vehicleSource) vehicleSource.classList.add('active');
+        console.log('Showing vehicle legend and source');
+      } else if (cbPLOS?.checked) {
+        if (plosLegend) plosLegend.classList.add('active');
+        if (plosSource) plosSource.classList.add('active');
+        console.log('Showing PLOS legend and source');
+      }
+    }
+    
+    // Number formatting function - adds commas for thousands
+    function formatNumber(num) {
+      return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+    
+    // Setup popup handlers for all layers
+    function setupPopupHandlers() {
+      // Change cursor on hover
+      map.on('mouseenter', 'peds-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'peds-layer', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'vehicles-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'vehicles-layer', () => { map.getCanvas().style.cursor = ''; });
+      
+      // Add mouse handlers for all 8 PLOS grade layers
+      PLOS_GRADE_LAYERS.forEach(gradeLayer => {
+        map.on('mouseenter', gradeLayer.layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', gradeLayer.layerId, () => { map.getCanvas().style.cursor = ''; });
+      });
+      
+      // Pedestrian Density popup
+      map.on('click', 'peds-layer', (e) => {
+        const props = e.features[0].properties;
+        const btwRational = parseFloat(props.Btw_Rational) || 0;
+        const apUser = parseFloat(props.Apprx) || 0;
+        const length = parseFloat(props.__Length) || 0;
+        const morningUser = parseFloat(props.Morning) || 0;
+        const dayUser = parseFloat(props.Day) || 0;
+        const nightUser = parseFloat(props.Night) || 0;
+        
+        // Round and format with commas
+        const apUserRounded = formatNumber(Math.round(apUser));
+        const lengthRounded = length.toFixed(2);
+        const morningRounded = formatNumber(Math.round(morningUser));
+        const dayRounded = formatNumber(Math.round(dayUser));
+        const nightRounded = formatNumber(Math.round(nightUser));
+        
+        // PEDESTRIAN DENSITY - BLUE GRADIENT
+        let densityClass = '';
+        let classColor = '';
+        
+        if (btwRational < 3.470) {
+            densityClass = 'Very Low (0 - 3.5)';
+            classColor = '#CCE5FF';
+        } else if (btwRational < 9.920) {
+            densityClass = 'Low (3.5 - 9.9)';
+            classColor = '#B3D8FF';
+        } else if (btwRational < 16.430) {
+            densityClass = 'Low-Medium (9.9 - 16.4)';
+            classColor = '#99CBFF';
+        } else if (btwRational < 23.720) {
+            densityClass = 'Medium (16.4 - 23.7)';
+            classColor = '#80BEFF';
+        } else if (btwRational < 31.130) {
+            densityClass = 'Medium-High (23.7 - 31.1)';
+            classColor = '#66AFFF';
+        } else if (btwRational < 39.180) {
+            densityClass = 'High (31.1 - 39.2)';
+            classColor = '#4D9CFF';
+        } else if (btwRational < 47.010) {
+            densityClass = 'Very High (39.2 - 47)';
+            classColor = '#3389FF';
+        } else if (btwRational < 54.760) {
+            densityClass = 'Extremely High (47 - 54.8)';
+            classColor = '#0079FF';
+        } else if (btwRational < 64.030) {
+            densityClass = 'Critical (54.8 - 64)';
+            classColor = '#0066E6';
+        } else if (btwRational < 74.250) {
+            densityClass = 'Very Critical (64 - 74.3)';
+            classColor = '#0047B3';
+        } else if (btwRational < 84.600) {
+            densityClass = 'Severe (74.3 - 84.6)';
+            classColor = '#002F8C';
+        } else {
+            densityClass = 'Extreme (84.6+)';
+            classColor = '#001A66';
+        }
+        
+        new mapboxgl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div style="padding: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-width: 200px;">
+              <strong style="font-size: 12px; color: #1a1a1a; display: block; margin-bottom: 10px;">Pedestrian Usage</strong>
+              <div style="margin: 0 0 10px 0; padding: 10px; background: #f8f8f8; border-radius: 5px;">
+                <div style="font-size: 10px; color: #666; margin-bottom: 4px;">Average User / Day</div>
+                <strong style="font-size: 16px; color: ${classColor}; line-height: 1.2;">${apUserRounded}</strong>
+              </div>
+              <div style="margin: 0 0 10px 0; padding: 8px; background: white; border-radius: 5px; border: 1px solid #e8e8e8;">
+                <div style="font-size: 10px; color: #666; margin-bottom: 3px;">Density Classification</div>
+                <strong style="font-size: 11px; color: ${classColor}; line-height: 1.3;">${densityClass}</strong>
+              </div>
+              <div style="margin: 0 0 10px 0; padding: 8px; background: white; border-radius: 5px; border: 1px solid #e8e8e8;">
+                <div style="font-size: 10px; color: #666; margin-bottom: 3px;">Segment Length</div>
+                <strong style="font-size: 11px; color: #1a1a1a;">${lengthRounded} m</strong>
+              </div>
+              <div style="margin: 0; padding: 10px; background: linear-gradient(135deg, ${classColor}15, ${classColor}08); border-radius: 5px; border-left: 3px solid ${classColor};">
+                <strong style="font-size: 11px; color: #333; display: block; margin-bottom: 6px;">Usage by Time Period</strong>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px; color: #666;">Morning</span>
+                    <strong style="font-size: 11px; color: #1a1a1a;">${morningRounded}</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px; color: #666;">Day</span>
+                    <strong style="font-size: 11px; color: #1a1a1a;">${dayRounded}</strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 10px; color: #666;">Night</span>
+                    <strong style="font-size: 11px; color: #1a1a1a;">${nightRounded}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `)
+          .addTo(map);
+      });
+      
+      // Vehicle Density popup
+      map.on('click', 'vehicles-layer', (e) => {
+        const props = e.features[0].properties;
+        const density = parseFloat(props['11:00:00']) || 0;
+        const length = parseFloat(props.Shape_Leng) || 0;
+        
+        // Round and format with commas
+        const densityRounded = formatNumber(density.toFixed(2));
+        const lengthRounded = formatNumber(length.toFixed(2));
+        
+        let densityClass = '';
+        let classColor = '';
+        
+        //VEHCILE DENSITY - RED GRADIENT
+        if (density < 3.470) {
+          densityClass = 'Very Low (0 - 3.5)';
+          classColor = '#FFF5F2';
+        } else if (density < 9.920) {
+          densityClass = 'Low (3.5 - 9.9)';
+          classColor = '#FFE0D9';
+        } else if (density < 16.430) {
+          densityClass = 'Low-Medium (9.9 - 16.4)';
+          classColor = '#FFC2B3';
+        } else if (density < 23.720) {
+          densityClass = 'Medium (16.4 - 23.7)';
+          classColor = '#FFA38C';
+        } else if (density < 31.130) {
+          densityClass = 'Medium-High (23.7 - 31.1)';
+          classColor = '#FF8566';
+        } else if (density < 39.180) {
+          densityClass = 'High (31.1 - 39.2)';
+          classColor = '#FF664D';
+        } else if (density < 47.010) {
+          densityClass = 'Very High (39.2 - 47)';
+          classColor = '#FF4D33';
+        } else if (density < 54.760) {
+          densityClass = 'Extremely High (47 - 54.8)';
+          classColor = '#FF3319';
+        } else if (density < 64.030) {
+          densityClass = 'Critical (54.8 - 64)';
+          classColor = '#E62600';
+        } else if (density < 74.250) {
+          densityClass = 'Very Critical (64 - 74.3)';
+          classColor = '#CC1F00';
+        } else if (density < 84.600) {
+          densityClass = 'Severe (74.3 - 84.6)';
+          classColor = '#991700';
+        } else {
+          densityClass = 'Extreme (84.6+)';
+          classColor = '#660D00';
+        }
+        
+        new mapboxgl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div style="padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-width: 200px;">
+              <strong style="font-size: 13px; color: #1a1a1a; display: block; margin-bottom: 12px;">Vehicle Density</strong>
+              <div style="margin: 0 0 12px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 3px solid ${classColor};">
+                <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Average Density Value</div>
+                <strong style="font-size: 16px; color: #212529;">${densityRounded}</strong>
+              </div>
+              <div style="margin: 0 0 8px 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Classification</div>
+                <strong style="font-size: 12px; color: ${classColor};">${densityClass}</strong>
+              </div>
+              <div style="margin: 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Segment Length</div>
+                <strong style="font-size: 12px; color: #212529;">${lengthRounded} m</strong>
+              </div>
+            </div>
+          `)
+          .addTo(map);
+      });
+      
+      // PLOS popup - handle all 8 grade layers
+      const handlePlosClick = (e) => {
+        const props = e.features[0].properties;
+        const plosValue = parseFloat(props.PLOS_Edit) || 0;
+        const length = parseFloat(props.__Length) || 0;
+        
+        // Round and format with commas
+        const plosRounded = plosValue.toFixed(2);
+        const lengthRounded = formatNumber(length.toFixed(2));
+        
+        let losGrade = '';
+        let adequacy = '';
+        let gradeColor = '';
+        
+        if (plosValue < 1.5) {
+          losGrade = 'A';
+          adequacy = 'Excellent - Adequate';
+          gradeColor = '#00CC00';
+        } else if (plosValue < 2.5) {
+          losGrade = 'B';
+          adequacy = 'Good - Adequate';
+          gradeColor = '#77CC00';
+        } else if (plosValue < 3.5) {
+          losGrade = 'C';
+          adequacy = 'Fair - Marginally Adequate';
+          gradeColor = '#CCCC00';
+        } else if (plosValue < 4.5) {
+          losGrade = 'D';
+          adequacy = 'Poor - Inadequate';
+          gradeColor = '#FFCC00';
+        } else if (plosValue < 5.5) {
+          losGrade = 'E+';
+          adequacy = 'Very Poor - Inadequate';
+          gradeColor = '#FF9900';
+        } else if (plosValue < 6.5) {
+          losGrade = 'E';
+          adequacy = 'Critical - Inadequate';
+          gradeColor = '#FF6600';
+        } else if (plosValue < 10.0) {
+          losGrade = 'F+';
+          adequacy = 'Failing - Severely Inadequate';
+          gradeColor = '#FF3300';
+        } else {
+          losGrade = 'F';
+          adequacy = 'Severely Inadequate - Unsafe';
+          gradeColor = '#CC0000';
+        }
+        
+        new mapboxgl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div style="padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-width: 220px;">
+              <strong style="font-size: 13px; color: #1a1a1a; display: block; margin-bottom: 12px;">Pedestrian Level of Service</strong>
+              <div style="margin: 0 0 12px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">PLOS Score</div>
+                  <strong style="font-size: 16px; color: #212529;">${plosRounded}</strong>
+                </div>
+                <div style="text-align: right;">
+                  <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Grade</div>
+                  <strong style="font-size: 24px; color: ${gradeColor}; font-weight: bold;">${losGrade}</strong>
+                </div>
+              </div>
+              <div style="margin: 0 0 8px 0; padding: 10px; background: #f8f9fa; border-radius: 8px; border-left: 3px solid ${gradeColor};">
+                <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Service Level</div>
+                <strong style="font-size: 11px; color: #212529; line-height: 1.4;">${adequacy}</strong>
+              </div>
+              <div style="margin: 0; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                <div style="font-size: 10px; color: #6c757d; margin-bottom: 4px;">Segment Length</div>
+                <strong style="font-size: 12px; color: #212529;">${lengthRounded} m</strong>
+              </div>
+            </div>
+          `)
+          .addTo(map);
+      };
+      
+      // Add click handler to all 8 PLOS grade layers
+      PLOS_GRADE_LAYERS.forEach(gradeLayer => {
+        map.on('click', gradeLayer.layerId, handlePlosClick);
+      });
+    }
+
+    // Basemap switcher using MapTiler styles
+    const BASEMAPS = [
+      { 
+        id: "satellite", 
+        label: "satellite", 
+        style: MAPTILER_KEY
+          ? `https://api.maptiler.com/maps/satellite/style.json?key=${MAPTILER_KEY}`
+          : DEFAULT_BASEMAP_STYLE,
+        thumb: "./src/assets/02_Earth.png" 
+      },
+      { 
+        id: "OSM", 
+        label: "street map", 
+        style: MAPTILER_KEY
+          ? `https://api.maptiler.com/maps/openstreetmap/style.json?key=${MAPTILER_KEY}`
+          : DEFAULT_BASEMAP_STYLE,
+        thumb: "./src/assets/01_Hybrid.png" 
+      },
+      { 
+        id: "pastel", 
+        label: "pastel", 
+        style: MAPTILER_KEY
+          ? `https://api.maptiler.com/maps/0199c990-d557-79f4-a316-082733fdc6a6/style.json?key=${MAPTILER_KEY}`
+          : DEFAULT_BASEMAP_STYLE,
+        thumb: "./src/assets/03_Pastel.png" 
+      }
+    ];
+
+    const bmPanel = document.createElement('div');
+    bmPanel.id = "bmPanel";
+    bmPanel.className = "flex md:flex-col gap-2 md:hover:flex md:hover:scale-100 transition origin-bottom-right md:group-hover:scale-100 md:scale-100";
+
+    const bmCtrl = document.createElement('div');
+    bmCtrl.id = "basemapCtrl";
+    bmCtrl.className = "absolute bottom-10 right-4 z10";
+    bmCtrl.innerHTML = `
+      <div class="group relative">
+        <button id="bmToggle"
+          class="md:hidden mb-2 grid h-10 w-10 place-items-center rounded-md bg-white/90 shadow border border-neutral-200">
+          <span class="text-xs">BM</span>
+        </button>
+      </div>
+    `;
+    bmCtrl.querySelector('.group').appendChild(bmPanel);
+    document.body.appendChild(bmCtrl);
+
+    const bmToggle = document.getElementById("bmToggle");
+    let open = false;
+    bmToggle?.addEventListener("click", () => {
+      open = !open;
+      bmPanel.classList.toggle("hidden", !open);
+    });
+    const isMobileBM = () => matchMedia("(max-width: 767px)").matches;
+    const setInitialVisibility = () => bmPanel.classList.toggle("hidden", isMobileBM());
+    setInitialVisibility();
+    addEventListener("resize", setInitialVisibility);
+
+    let activeId = "pastel";
+    BASEMAPS.forEach(({ id, label, thumb, style }) => {
+      const btn = document.createElement("button");
+      btn.className = [
+        "relative overflow-hidden rounded-md border border-neutral-300 bg-white shadow",
+        "hover:shadow-md focus:outline-none focus:ring focus:ring-blue-400/30",
+        "w-16 h-16 md:w-20 md:h-20"
+      ].join(" ");
+      btn.setAttribute("data-style", style);
+      btn.setAttribute("data-id", id);
+      btn.title = label;
+      btn.innerHTML = `
+        <img src="${thumb}" alt="${label}" class="absolute inset-0 w-full h-full object-cover">
+        <span class="absolute bottom-0 left-0 right-0 text-[10px] md:text-xs bg-black/60 text-white px-1 py-0.5">${label}</span>
+      `;
+      if (id === activeId) btn.classList.add("ring", "ring-blue-500");
+
+      btn.addEventListener("click", () => {
+        if (id === activeId) return;
+        
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        const bearing = map.getBearing();
+        const pitch = map.getPitch();
+        
+        const visibilityStates = {};
+        Object.keys(layerManager.layers).forEach(key => {
+          visibilityStates[key] = layerManager.visibility[key];
+        });
+        
+        // Save PLOS layer visibility states
+        const plosVisibilityStates = {};
+        PLOS_GRADE_LAYERS.forEach(gradeLayer => {
+          const layer = map.getLayer(gradeLayer.layerId);
+          if (layer) {
+            plosVisibilityStates[gradeLayer.layerId] = map.getLayoutProperty(gradeLayer.layerId, 'visibility');
+          }
+        });
+        
+        // Save POI layer visibility state
+        let poiVisibility = 'none';
+        const poiLayer = map.getLayer(POI_LAYER.layerId);
+        if (poiLayer) {
+          poiVisibility = map.getLayoutProperty(POI_LAYER.layerId, 'visibility') || 'none';
+        }
+        
+        map.setStyle(style);
+        
+        map.once('styledata', () => {
+          map.jumpTo({ center, zoom, bearing, pitch });
+          
+          // Rebuild layerManager layers (peds, vehicles)
+          Object.keys(layerManager.layers).forEach(key => {
+            layerManager._add(key);
+            layerManager.setVisible(key, visibilityStates[key]);
+          });
+          
+          // Rebuild PLOS layers
+          if (!map.getSource('plos-source')) {
+            map.addSource('plos-source', {
+              type: 'vector',
+              url: `mapbox://${PLOS_LAYER.tilesetId}`
+            });
+          }
+          
+          PLOS_GRADE_LAYERS.forEach(gradeLayer => {
+            if (map.getLayer(gradeLayer.layerId)) {
+              map.removeLayer(gradeLayer.layerId);
+            }
+            
+            map.addLayer({
+              id: gradeLayer.layerId,
+              type: 'line',
+              source: 'plos-source',
+              'source-layer': PLOS_LAYER.sourceLayer,
+              filter: [
+                'all',
+                ['>=', ['get', 'PLOS_Edit'], gradeLayer.min],
+                ['<', ['get', 'PLOS_Edit'], gradeLayer.max]
+              ],
+              paint: {
+                'line-color': gradeLayer.color,
+                'line-width': 8,
+                'line-opacity': 0.9
+              },
+              layout: {
+                'line-join': 'round',
+                'line-cap': 'round',
+                'visibility': plosVisibilityStates[gradeLayer.layerId] || 'none'
+              }
+            });
+          });
+          
+          // Rebuild POI layer with icon
+          if (!map.getSource('poi-source')) {
+            map.addSource('poi-source', {
+              type: 'vector',
+              url: `mapbox://${POI_LAYER.tilesetId}`
+            });
+          }
+          
+          map.loadImage("./src/assets/info.png", (error, image) => {
+            if (error) {
+              console.error('Error loading POI icon after basemap change:', error);
+              return;
+            }
+            
+            // CRITICAL: After style change, ALWAYS re-add the icon
+            // (map.setStyle() clears all custom images)
+            if (map.hasImage('info-icon')) {
+              map.removeImage('info-icon');
+            }
+            map.addImage('info-icon', image);
+            
+            // Remove and re-add the POI layer
+            if (map.getLayer(POI_LAYER.layerId)) {
+              map.removeLayer(POI_LAYER.layerId);
+            }
+            
+            map.addLayer({
+              id: POI_LAYER.layerId,
+              type: 'symbol',
+              source: 'poi-source',
+              'source-layer': POI_LAYER.sourceLayer,
+              layout: {
+                'icon-image': 'info-icon',
+                'icon-size': 0.3,
+                'icon-allow-overlap': true,
+                'visibility': poiVisibility
+              }
+            });
+            
+            console.log('? POI icon layer rebuilt after basemap change');
+          });
+          
+          // Rebuild AI highlight layer
+          if (!map.getSource('ai-highlight-source')) {
+            map.addSource('ai-highlight-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+          }
+          if (!map.getLayer('ai-highlight-layer')) {
+            map.addLayer({ id: 'ai-highlight-layer', type: 'line', source: 'ai-highlight-source',
+              paint: { 'line-color': '#f522a4', 'line-width': 6, 'line-opacity': 0.95 },
+              layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': 'none' } });
+          }
+
+          // Re-add popup handlers after basemap change
+          setTimeout(() => setupPopupHandlers(), 200);
+
+          debugLog('Rebuilt PLOS and POI layers after basemap change');
+        });
+        
+        bmPanel.querySelectorAll("button").forEach(b => b.classList.remove("ring", "ring-blue-500"));
+        btn.classList.add("ring", "ring-blue-500");
+        activeId = id;
+        if (isMobileBM()) { 
+          open = false; 
+          bmPanel.classList.add("hidden"); 
+        }
+        
+        debugLog(`Switched to ${label} basemap`);
+      });
+
+      bmPanel.appendChild(btn);
+    });
+  </script>
+
+  <script>
+    // Priority Locations Data - UPDATED WITH NEW IMAGE PATHS
+    const PRIORITY_LOCATIONS = {
+      'lincoln-ave': {
+        name: 'Lincoln Avenue',
+        description: 'Major north-south corridor with high pedestrian activity and mixed traffic conditions.',
+        camera: {
+          center: [-73.929, 40.810],
+          zoom: 17,
+          pitch: 45,
+          bearing: -10
+        },
+        // Node IDs that belong to this location (matched by Name field)
+        nodeNames: ['Lincoln Ave'],
+        nodes: [
+          {
+            id: 'lincoln-node-1',
+            coordinates: [-73.9290, 40.8095],
+            title: 'Lincoln Avenue Corridor Improvements',
+            description: 'Comprehensive pedestrian safety enhancements including sidewalk widening, protected bike lanes, and improved lighting along this major north-south corridor.',
+            image: './src/assets/interventions/01_TOS.png'
+          }
+        ],
+        interventions: [
+          'Widen sidewalks to accommodate high pedestrian volumes',
+          'Install protected bike lanes to separate cyclists from vehicular traffic',
+          'Add pedestrian refuge islands at wide intersections',
+          'Improve street lighting for nighttime safety'
+        ],
+        strategies: [
+          'Traffic calming measures including speed bumps and raised crosswalks',
+          'Green infrastructure integration with street trees and bioswales',
+          'Enhanced bus stop amenities and shelters',
+          'Public art installations to activate streetscape'
+        ]
+      },
+      '138-st': {
+        name: '138th Street',
+        description: 'Key east-west connector with transit hub and commercial activity.',
+        camera: {
+          center: [-73.92415, 40.80987],
+          zoom: 17,
+          pitch: 45,
+          bearing: 100
+        },
+        nodeNames: ['E 138th St'],
+        nodes: [
+          {
+            id: '138-node-1',
+            coordinates: [-73.9240, 40.8100],
+            title: '138th Street Transit Hub Enhancement',
+            description: 'Pedestrian-focused improvements including high-visibility crosswalks, curb extensions, and a new pedestrian plaza at the subway station entrance.',
+            image: './src/assets/interventions/01_TOS.png'
+          }
+        ],
+        interventions: [
+          'Redesign crosswalks with high-visibility markings and countdown timers',
+          'Implement curb extensions (bulb-outs) at key intersections',
+          'Add wayfinding signage to connect transit nodes',
+          'Create pedestrian plaza at transit hub'
+        ],
+        strategies: [
+          'Pedestrian-priority design at subway station entrances',
+          'Tactical urbanism interventions for quick wins',
+          'Coordination with MTA for seamless multimodal connections',
+          'Public space activation through seating and landscaping'
+        ]
+      },
+      '134-st': {
+        name: '134th Street',
+        description: 'Residential corridor requiring traffic calming and safety improvements.',
+        camera: {
+          center: [-73.92671, 40.80728],
+          zoom: 17,
+          pitch: 45,
+          bearing: 160
+        },
+        nodeNames: ['E 134th St'],
+        nodes: [
+          {
+            id: '134-node-1',
+            coordinates: [-73.9268, 40.8073],
+            title: '134th Street Traffic Calming Zone',
+            description: 'Comprehensive traffic calming measures including 20 mph slow zones, speed cushions, and enhanced pedestrian crossings for residential safety.',
+            image: './src/assets/interventions/03_TCO.png'
+          }
+        ],
+        interventions: [
+          'Implement 20 mph slow zones in residential blocks',
+          'Install speed cushions to reduce vehicle speeds',
+          'Add zebra crossings at mid-block locations',
+          'Improve sight lines by removing visual obstructions'
+        ],
+        strategies: [
+          'Community-led street safety audits',
+          'School zone enhancements with crossing guards',
+          'Parklet installations to reclaim street space',
+          'Green infrastructure for stormwater management'
+        ]
+      },
+      'bruckner-blvd': {
+        name: 'Bruckner Boulevard',
+        description: 'High-speed arterial requiring pedestrian safety enhancements and crossing improvements.',
+        camera: {
+          center: [-73.92077, 40.80414],
+          zoom: 17,
+          pitch: 45,
+          bearing: 90
+        },
+        nodeNames: ['Bruckner Blvd'],
+        nodes: [
+          {
+            id: 'bruckner-node-1',
+            coordinates: [-73.9208, 40.8040],
+            title: 'Bruckner Boulevard Safety Corridor',
+            description: 'Major pedestrian safety enhancements including protected crossings, lane reductions, and median refuge areas to improve safety on this high-speed arterial.',
+            image: './src/assets/interventions/03_TCO.png'
+          }
+        ],
+        interventions: [
+          'Install pedestrian overpasses or underpasses at key locations',
+          'Reduce number of traffic lanes and narrow lane widths',
+          'Add median barriers with pedestrian refuge areas',
+          'Implement leading pedestrian intervals (LPI) at signals'
+        ],
+        strategies: [
+          'Complete streets redesign to balance all modes',
+          'Vision Zero safety improvements at crash hotspots',
+          'Noise reduction barriers for adjacent residential areas',
+          'Gateway treatments to signal transition to neighborhood context'
+        ]
+      },
+      'e133-st': {
+        name: 'E 133rd Street',
+        description: 'Mixed-use corridor with connectivity gaps and pedestrian infrastructure needs.',
+        camera: {
+          center: [-73.91538, 40.80180],
+          zoom: 17,
+          pitch: 45,
+          bearing: 100
+        },
+        nodeNames: ['E 133rd St'],
+        nodes: [
+          {
+            id: 'e133-node-1',
+            coordinates: [-73.9152, 40.8020],
+            title: 'E 133rd Street Infrastructure Repair',
+            description: 'Essential pedestrian infrastructure improvements including sidewalk gap repairs, ADA-compliant ramps, and street amenities for better connectivity.',
+            image: './src/assets/interventions/04_TIS.png'
+          }
+        ],
+        interventions: [
+          'Fill sidewalk gaps and repair damaged pavement',
+          'Install ADA-compliant curb ramps at all intersections',
+          'Add street furniture (benches, trash receptacles)',
+          'Improve drainage to prevent sidewalk flooding'
+        ],
+        strategies: [
+          'Complete sidewalk network for continuous pedestrian routes',
+          'Activate ground floor retail frontages',
+          'Create public gathering spaces at key nodes',
+          'Coordinate with property owners for facade improvements'
+        ]
+      },
+      '132nd-st': {
+        name: '132nd Street',
+        description: 'Emerging corridor with potential for pedestrian-oriented redevelopment.',
+        camera: {
+          center: [-73.92126, 40.80311],
+          zoom: 17,
+          pitch: 45,
+          bearing: 160
+        },
+        nodeNames: ['E 132nd St'],
+        nodes: [
+          {
+            id: '132-node-1',
+            coordinates: [-73.9213, 40.8030],
+            title: '132nd Street Pedestrian Zone',
+            description: 'Transformation into a pedestrian-oriented corridor with shared streets, parklets, and enhanced streetscape amenities to support active ground-floor uses.',
+            image: './src/assets/interventions/04_TIS.png'
+          }
+        ],
+        interventions: [
+          'Create shared streets with pedestrian priority zones',
+          'Install decorative paving and street furniture',
+          'Add bike parking and bicycle repair stations',
+          'Implement parklets and outdoor dining areas'
+        ],
+        strategies: [
+          'Mixed-use development incentives for active ground floors',
+          'Public-private partnerships for streetscape improvements',
+          'Placemaking initiatives with community input',
+          'Pilot projects for innovative street design solutions'
+        ]
+      }
+    };
+
+    // Handle dropdown selection
+    const priorityLocationSelect = document.getElementById('priorityLocationSelect');
+    const locationDetails = document.getElementById('locationDetails');
+    const defaultMessage = document.getElementById('defaultMessage');
+    const locationName = document.getElementById('locationName');
+    const locationDescription = document.getElementById('locationDescription');
+    const interventionsList = document.getElementById('interventionsList');
+    const strategiesList = document.getElementById('strategiesList');
+
+    // Variable to track current selected location
+    let currentSelectedLocation = null;
+
+    // Function to filter POI layer based on selected location
+    function filterPOILayer(locationKey) {
+      if (!map.getLayer(POI_LAYER.layerId)) {
+        console.log('POI layer not found!');
+        return;
+      }
+      
+      if (!locationKey || !PRIORITY_LOCATIONS[locationKey]) {
+        // Hide all POIs
+        map.setFilter(POI_LAYER.layerId, ['==', 'Name', '']);
+        console.log('Hiding all POI points');
+        return;
+      }
+      
+      const location = PRIORITY_LOCATIONS[locationKey];
+      const nodeNames = location.nodeNames || [];
+      
+      // DEBUG: Temporarily show ALL POIs to verify they're visible
+      console.log('DEBUG: Removing filter to show ALL POI points');
+      map.setFilter(POI_LAYER.layerId, null);
+      
+      // List all POI features to see their Name values
+      setTimeout(() => {
+        const features = map.querySourceFeatures('poi-source', {
+          sourceLayer: POI_LAYER.sourceLayer
+        });
+        console.log('=== ALL POI FEATURES ===');
+        console.log('Total POI features:', features.length);
+        features.forEach((f, i) => {
+          console.log(`POI ${i + 1}: Name="${f.properties.Name}"`);
+        });
+        console.log('======================');
+      }, 500);
+    }
+
+    // Function to show/hide POI intervention layer
+    function togglePOILayer(visible) {
+      console.log('togglePOILayer called with visible =', visible);
+      
+      if (map.getLayer(POI_LAYER.layerId)) {
+        const currentVisibility = map.getLayoutProperty(POI_LAYER.layerId, 'visibility');
+        console.log('Current POI layer visibility:', currentVisibility);
+        
+        map.setLayoutProperty(POI_LAYER.layerId, 'visibility', visible ? 'visible' : 'none');
+        
+        const newVisibility = map.getLayoutProperty(POI_LAYER.layerId, 'visibility');
+        console.log('New POI layer visibility:', newVisibility);
+      } else {
+        console.log('ERROR: POI layer not found!');
+      }
+    }
+
+    // Add click handler for POI points (after map loads)
+    map.on('load', () => {
+      // Change cursor on hover
+      map.on('mouseenter', POI_LAYER.layerId, () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', POI_LAYER.layerId, () => {
+        map.getCanvas().style.cursor = '';
+      });
+
+      // Click handler for POI points - FIXED: Use Name field from feature properties
+      map.on('click', POI_LAYER.layerId, (e) => {
+        const feature = e.features[0];
+        const props = feature.properties;
+        const coordinates = e.lngLat;
+        
+        // DEBUG: Log the exact Name value
+        console.log('=== POI CLICKED ===');
+        console.log('Name field value:', props.Name);
+        console.log('All properties:', props);
+        console.log('==================');
+        
+        // Get location info from current selection for image and description
+        const selectedValue = currentSelectedLocation;
+        let locationInfo = null;
+        
+        if (selectedValue && PRIORITY_LOCATIONS[selectedValue]) {
+          const location = PRIORITY_LOCATIONS[selectedValue];
+          // Use first node info as template for image and description
+          if (location.nodes && location.nodes.length > 0) {
+            locationInfo = location.nodes[0];
+          }
+        }
+        
+        // Extract data from properties
+        const streetName = props.Name || 'Intervention Point';  // FIX: Use Name field from properties
+        const cConnect = props.C_Connect || 0;
+        const cRegen = props.C_Regen || 0;
+        const cGreen = props.C_Green || 0;
+        const uConnect = props.U_Connect || 0;
+        const uRegen = props.U_Regen || 0;
+        const uGreen = props.U_Green || 0;
+        
+        // Format percentages (round to whole numbers)
+        const formatPercent = (val) => Math.round(val);
+        
+        // Create popup - FIXED: Use streetName from Name field
+        new mapboxgl.Popup({
+          anchor: 'left',
+          offset: 55,
+          maxWidth: '400px'
+        })
+        .setLngLat(coordinates)
+        .setHTML(`
+          <div style="padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+            ${locationInfo ? `
+              <img 
+                src="${locationInfo.image}" 
+                alt="${streetName}"
+                style="width: 100%; height: 300px; object-fit: contain; border-radius: 8px 8px 0 0; background: #f8f8f8;"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+              />
+
+              <div style="padding: 12px;">
+                <strong style="font-size: 14px; color: #1a1a1a; display: block; margin-bottom: 8px;">${streetName}</strong>
+                <p style="font-size: 12px; color: #666; line-height: 1.6; margin: 0 0 12px 0;">${locationInfo.description}</p>
+                
+                <!-- Data Grid -->
+                <div style="background: #f8f9fa; border-radius: 6px; padding: 8px 10px; margin-top: 6px;">
+                  <div style="font-size: 11px; font-weight: 600; color: #555; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Metrics</div>
+                  
+                  <!-- Connectivity Row -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; margin-bottom: 6px; border-bottom: 1px solid #e0e0e0;">
+                    <span style="font-size: 11px; color: #666; flex: 1;">Connectivity</span>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                      <div style="text-align: center;">
+                        <div style="font-size: 9px; color: #999; margin-bottom: 1px;">Current</div>
+                        <strong style="font-size: 13px; color: #1a1a1a;">${formatPercent(cConnect)}%</strong>
+                      </div>
+                      <div style="text-align: center;">
+                        <div style="font-size: 9px; color: #999; margin-bottom: 1px;">Potential</div>
+                        <strong style="font-size: 13px; color: #00308F;">${formatPercent(uConnect)}%</strong>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Plot Potential Row -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #e0e0e0;">
+                    <span style="font-size: 11px; color: #666; flex: 1;">Plot Potential</span>
+                    <div style="display: flex; gap: 16px; align-items: center;">
+                      <div style="text-align: center;">
+                        <div style="font-size: 9px; color: #999; margin-bottom: 1px;">Current</div>
+                        <strong style="font-size: 13px; color: #1a1a1a;">${formatPercent(cRegen)}%</strong>
+                      </div>
+                      <div style="text-align: center;">
+                        <div style="font-size: 9px; color: #999; margin-bottom: 1px;">Potential</div>
+                        <strong style="font-size: 13px; color: #00308F;">${formatPercent(uRegen)}%</strong>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Greens Row -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+                    <span style="font-size: 11px; color: #666; flex: 1;">Greens</span>
+                    <div style="display: flex; gap: 16px; align-items: center;">
+                      <div style="text-align: center;">
+                        <div style="font-size: 9px; color: #999; margin-bottom: 1px;">Current</div>
+                        <strong style="font-size: 13px; color: #1a1a1a;">${formatPercent(cGreen)}%</strong>
+                      </div>
+                      <div style="text-align: center;">
+                        <div style="font-size: 9px; color: #999; margin-bottom: 1px;">Potential</div>
+                        <strong style="font-size: 13px; color: #00308F;">${formatPercent(uGreen)}%</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ` : `
+              <div style="padding: 12px;">
+                <strong style="font-size: 13px; color: #1a1a1a; display: block; margin-bottom: 6px;">${streetName}</strong>
+                <p style="font-size: 11px; color: #666; line-height: 1.5; margin: 0;">Click a location from the dropdown to see intervention details.</p>
+              </div>
+            `}
+          </div>
+        `)
+        .addTo(map);
+        
+        console.log('Clicked POI point:', streetName);
+        console.log('Data - Connectivity:', cConnect, '?', uConnect, '| Plot:', cRegen, '?', uRegen, '| Green:', cGreen, '?', uGreen);
+      });
+    });
+
+    priorityLocationSelect?.addEventListener('change', (e) => {
+      const selectedValue = e.target.value;
+      currentSelectedLocation = selectedValue;
+      
+      console.log('=== LOCATION SELECTED ===');
+      console.log('Selected:', selectedValue);
+      
+      if (selectedValue && PRIORITY_LOCATIONS[selectedValue]) {
+        const location = PRIORITY_LOCATIONS[selectedValue];
+        
+        console.log('Location data:', location);
+        console.log('Camera settings:', location.camera);
+        
+        // Fly to the location on the map with smooth animation
+        if (location.camera) {
+          map.flyTo({
+            center: location.camera.center,
+            zoom: location.camera.zoom,
+            pitch: location.camera.pitch,
+            bearing: location.camera.bearing,
+            duration: 2000,
+            essential: true
+          });
+        }
+        
+        // Show POI layer and apply filter after camera settles
+        console.log('Setting timeout for POI layer...');
+        setTimeout(() => {
+          console.log('Showing POI layer...');
+          togglePOILayer(true);
+          console.log('Applying filter...');
+          filterPOILayer(selectedValue);
+        }, 2200);
+        
+        // Update location details
+        locationName.textContent = location.name;
+        locationDescription.textContent = location.description;
+        
+        // Populate interventions list
+        interventionsList.innerHTML = '';
+        location.interventions.forEach(intervention => {
+          const li = document.createElement('li');
+          li.textContent = intervention;
+          interventionsList.appendChild(li);
+        });
+        
+        // Populate strategies list
+        strategiesList.innerHTML = '';
+        location.strategies.forEach(strategy => {
+          const li = document.createElement('li');
+          li.textContent = strategy;
+          strategiesList.appendChild(li);
+        });
+        
+        // Show details, hide default message
+        locationDetails.classList.remove('hidden');
+        defaultMessage.classList.add('hidden');
+        
+        console.log('Details updated');
+        console.log('========================');
+      } else {
+        console.log('No location selected, hiding POI layer');
+        // Hide POI layer when no location selected
+        togglePOILayer(false);
+        filterPOILayer(null);
+        
+        // Hide details, show default message
+        locationDetails.classList.add('hidden');
+        defaultMessage.classList.remove('hidden');
+        console.log('========================');
+      }
+    });
+  </script>
+
+  <script>
+  // ── AI ANALYST ────────────────────────────────────────────────────────────
+  (function () {
+    const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
+
+    function waitForMapIdle() {
+      return new Promise(resolve => {
+        if (map.isStyleLoaded()) { resolve(); return; }
+        map.once('idle', resolve);
+      });
+    }
+
+    function formatHour(col) {
+      if (!col) return '';
+      const parts = col.split(':');
+      if (parts.length < 1) return col;
+      const h = parseInt(parts[0]);
+      if (isNaN(h)) return col;
+      return h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h - 12) + ' PM';
+    }
+
+    function gatherVehicleData() {
+      const features = map.querySourceFeatures('vehicles-source', { sourceLayer: 'turck_density_upd-di2urp' });
+      if (!features.length) return null;
+      const timeRegex = /^\d{2}:\d{2}:\d{2}$/;
+      const sample = features[0].properties;
+      const timeCols = Object.keys(sample).filter(k => timeRegex.test(k)).sort();
+      if (!timeCols.length) return null;
+      const hourTotals = {};
+      timeCols.forEach(col => { hourTotals[col] = 0; });
+      features.forEach(f => {
+        timeCols.forEach(col => { hourTotals[col] += parseFloat(f.properties[col]) || 0; });
+      });
+      const peakCol = timeCols.reduce((best, col) => hourTotals[col] > hourTotals[best] ? col : best, timeCols[0]);
+      const sorted = [...features]
+        .filter(f => (parseFloat(f.properties[peakCol]) || 0) > 0)
+        .sort((a, b) => (parseFloat(b.properties[peakCol]) || 0) - (parseFloat(a.properties[peakCol]) || 0))
+        .slice(0, 10);
+      return {
+        peakHour: peakCol,
+        peakLabel: formatHour(peakCol),
+        topSegments: sorted.map(f => ({
+          id: f.id, geometry: f.geometry,
+          value: parseFloat(f.properties[peakCol]) || 0,
+          length: parseFloat(f.properties.Shape_Leng) || 0
+        })),
+        hourlyTotals: timeCols.map(col => ({ hour: col, label: formatHour(col), total: Math.round(hourTotals[col]) }))
+      };
+    }
+
+    async function loadPedsFromFile() {
+      try {
+        const res = await fetch('./public/data/Peds_Analysis.geojson');
+        if (!res.ok) return null;
+        const gj = await res.json();
+        if (!gj.features || !gj.features.length) return null;
+        const propKey = 'Btw_Rational';
+        const sorted = [...gj.features]
+          .filter(f => (parseFloat(f.properties[propKey]) || 0) > 0)
+          .sort((a, b) => (parseFloat(b.properties[propKey]) || 0) - (parseFloat(a.properties[propKey]) || 0));
+        return {
+          topSegments: sorted.slice(0, 10).map(f => ({
+            id: f.id, geometry: f.geometry,
+            value: parseFloat(f.properties[propKey]) || 0,
+            length: parseFloat(f.properties['__Length']) || 0,
+            morning: parseFloat(f.properties.Morning) || 0,
+            day: parseFloat(f.properties.Day) || 0,
+            night: parseFloat(f.properties.Night) || 0
+          })),
+          featureCount: gj.features.length
+        };
+      } catch (e) { return null; }
+    }
+
+    function gatherPedData() {
+      const features = map.querySourceFeatures('peds-source', { sourceLayer: 'pedestrian_density-bed9gf' });
+      if (!features.length) return null;
+      const propKey = 'Btw_Rational';
+      const sorted = [...features]
+        .filter(f => (parseFloat(f.properties[propKey]) || 0) > 0)
+        .sort((a, b) => (parseFloat(b.properties[propKey]) || 0) - (parseFloat(a.properties[propKey]) || 0))
+        .slice(0, 10);
+      return {
+        topSegments: sorted.map(f => ({
+          id: f.id, geometry: f.geometry,
+          value: parseFloat(f.properties[propKey]) || 0,
+          length: parseFloat(f.properties['__Length']) || 0
+        })),
+        featureCount: features.length
+      };
+    }
+
+    function gatherPlosData() {
+      const features = map.querySourceFeatures('plos-source', { sourceLayer: 'pedestrian_plos-cdosep' });
+      if (!features.length) return null;
+      const gradeCounts = { A:0, B:0, C:0, D:0, 'E+':0, E:0, 'F+':0, F:0 };
+      features.forEach(f => {
+        const v = parseFloat(f.properties.PLOS_Edit) || 0;
+        const g = v < 1.5 ? 'A' : v < 2.5 ? 'B' : v < 3.5 ? 'C' : v < 4.5 ? 'D' :
+                  v < 5.5 ? 'E+' : v < 6.5 ? 'E' : v < 10 ? 'F+' : 'F';
+        gradeCounts[g]++;
+      });
+      const sorted = [...features]
+        .filter(f => (parseFloat(f.properties.PLOS_Edit) || 0) > 0)
+        .sort((a, b) => (parseFloat(b.properties.PLOS_Edit) || 0) - (parseFloat(a.properties.PLOS_Edit) || 0))
+        .slice(0, 10);
+      return {
+        topSegments: sorted.map(f => ({
+          id: f.id, geometry: f.geometry,
+          value: parseFloat(f.properties.PLOS_Edit) || 0,
+          length: parseFloat(f.properties.__Length) || 0
+        })),
+        featureCount: features.length,
+        gradeCounts
+      };
+    }
+
+    async function loadTileData() {
+      await waitForMapIdle();
+      const timeRegex = /^\d{2}:\d{2}:\d{2}$/;
+      let vehFeatures = map.querySourceFeatures('vehicles-source', { sourceLayer: 'turck_density_upd-di2urp' });
+      const hasGoodTiles = vehFeatures.length > 0 &&
+        Object.keys(vehFeatures[0].properties || {}).some(k => timeRegex.test(k));
+      if (!hasGoodTiles) {
+        map.jumpTo({ center: [-73.923, 40.808], zoom: 15 });
+        await new Promise(resolve => map.once('idle', resolve));
+      }
+      return { pedTileData: gatherPedData() };
+    }
+
+    function ensureHighlightLayers() {
+      if (!map.getSource('ai-highlight-source')) {
+        map.addSource('ai-highlight-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
+      if (!map.getLayer('ai-highlight-layer')) {
+        map.addLayer({ id: 'ai-highlight-layer', type: 'line', source: 'ai-highlight-source',
+          paint: { 'line-color': '#f522a4', 'line-width': 6, 'line-opacity': 0.95 },
+          layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': 'none' } });
+      }
+    }
+
+    function clearHighlights() {
+      ensureHighlightLayers();
+      map.getSource('ai-highlight-source').setData({ type: 'FeatureCollection', features: [] });
+      map.setLayoutProperty('ai-highlight-layer', 'visibility', 'none');
+      document.getElementById('aiHighlightLegend').classList.remove('active');
+    }
+
+    function flyToFeatures(segments) {
+      const coords = [];
+      segments.forEach(s => {
+        if (!s.geometry) return;
+        if (s.geometry.type === 'LineString') {
+          s.geometry.coordinates.forEach(c => coords.push(c));
+        } else if (s.geometry.type === 'MultiLineString') {
+          s.geometry.coordinates.forEach(line => line.forEach(c => coords.push(c)));
+        } else if (s.geometry.type === 'Point') {
+          coords.push(s.geometry.coordinates);
+        }
+      });
+      if (!coords.length) return;
+      const lngs = coords.map(c => c[0]);
+      const lats = coords.map(c => c[1]);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: { top: 60, bottom: 60, left: 460, right: 60 }, maxZoom: 17, duration: 1200 }
+      );
+    }
+
+    function applyHighlights(segments, labelText) {
+      ensureHighlightLayers();
+      const nonZero = segments.filter(s => s.geometry && s.value > 0);
+      if (!nonZero.length) return;
+      const fc = {
+        type: 'FeatureCollection',
+        features: nonZero.map(s => ({ type: 'Feature', geometry: s.geometry, properties: { value: s.value } }))
+      };
+      map.getSource('ai-highlight-source').setData(fc);
+      map.setLayoutProperty('ai-highlight-layer', 'visibility', 'visible');
+      const legend = document.getElementById('aiHighlightLegend');
+      const legendText = document.getElementById('aiHighlightLegendText');
+      if (legendText) legendText.textContent = labelText || 'AI highlighted segments';
+      legend.classList.add('active');
+      flyToFeatures(nonZero);
+    }
+
+    function detectIntent(q) {
+      const lower = q.toLowerCase();
+      const pedKw = ['pedestrian', 'ped', 'walking', 'walker', 'foot', 'sidewalk', 'density'];
+      const plosKw = ['plos', 'level of service', 'los', 'grade', 'service quality'];
+      const vehKw = ['vehicle', 'car', 'bus', 'truck', 'automobile', 'motor'];
+      const score = kws => kws.filter(k => lower.includes(k)).length;
+      const ps = score(pedKw), ls = score(plosKw), vs = score(vehKw);
+      if (ls > ps && ls > vs) return 'plos';
+      if (vs > ps && vs > ls) return 'vehicle';
+      if (ps > 0 || (!vs && !ls)) return 'ped';
+      return 'all';
+    }
+
+    function summariseForClaude(vehData, pedData, plosData, intent) {
+      const ctx = {};
+      if ((intent === 'vehicle' || intent === 'all') && vehData) {
+        ctx.vehicles = {
+          peakHour: vehData.peakLabel,
+          topSegments: vehData.topSegments.map(s => ({ value: s.value, lengthM: Math.round(s.length) })),
+          hourlyPattern: vehData.hourlyTotals.map(h => ({ label: h.label, total: h.total }))
+        };
+      }
+      if ((intent === 'ped' || intent === 'all') && pedData) {
+        ctx.pedestrians = {
+          featureCount: pedData.featureCount,
+          topSegments: pedData.topSegments.map(s => ({ value: parseFloat(s.value).toFixed(2), lengthM: Math.round(s.length) }))
+        };
+      }
+      if ((intent === 'plos' || intent === 'all') && plosData) {
+        ctx.plos = { featureCount: plosData.featureCount, gradeCounts: plosData.gradeCounts };
+      }
+      return ctx;
+    }
+
+    async function callClaudeAPI(question, context) {
+      const apiKey = window.ANTHROPIC_API_KEY;
+      if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured in config.js');
+      const systemPrompt = 'You are an urban data analyst for the South Bronx. Answer the SPECIFIC question asked by the user based ONLY on the dataset context provided. Do NOT cover datasets not asked about. Be concise and direct.\n\nRespond with ONLY a JSON object (no markdown fences, no extra text):\n{"analysis":"2-3 sentences directly answering the question","recommendations":["rec1","rec2","rec3"]}';
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: CLAUDE_MODEL,
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: 'Question: ' + question + '\n\nData context:\n' + JSON.stringify(context, null, 2) }]
+        })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error((err.error && err.error.message) || ('HTTP ' + resp.status));
+      }
+      const data = await resp.json();
+      return data.content[0].text;
+    }
+
+    function parseClaudeJSON(raw) {
+      const attempts = [
+        raw,
+        raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, ''),
+        (raw.match(/\{[\s\S]*\}/) || [])[0] || raw
+      ];
+      for (const s of attempts) {
+        if (!s) continue;
+        try { return JSON.parse(s); } catch (_) {}
+        try { return JSON.parse(s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')); } catch (_) {}
+      }
+      throw new Error('Could not parse JSON from Claude response');
+    }
+
+    function renderBarChart(vehData) {
+      const chart = document.getElementById('aiBarChart');
+      if (!chart || !vehData || !vehData.hourlyTotals) { if (chart) chart.classList.remove('active'); return; }
+      const hours = vehData.hourlyTotals;
+      const max = Math.max(...hours.map(h => h.total));
+      const peakLabel = vehData.peakLabel;
+      const barsHtml = hours.map(h => {
+        const isPeak = h.label === peakLabel;
+        const h60 = max > 0 ? Math.max(3, Math.round((h.total / max) * 55)) : 3;
+        return '<div class="ai-bar-col' + (isPeak ? ' is-peak' : '') + '">' +
+          '<div class="ai-bar-fill" style="height:' + h60 + 'px"></div>' +
+          '<div class="ai-bar-lbl">' + h.label.replace(' AM', 'a').replace(' PM', 'p') + '</div>' +
+          '</div>';
+      }).join('');
+      chart.innerHTML = '<div class="ai-bar-chart-title">Hourly Vehicle Traffic</div><div class="ai-bars-outer">' + barsHtml + '</div>';
+      chart.classList.add('active');
+    }
+
+    function renderResponse(parsed, intent, vehData) {
+      const box = document.getElementById('aiResponseBox');
+      if (!box) return;
+      let html = '';
+      if (parsed.analysis) {
+        html += '<div class="ai-section-title">Analysis</div><div style="margin-bottom:8px;font-size:11px;">' + parsed.analysis + '</div>';
+      }
+      if (parsed.recommendations && parsed.recommendations.length) {
+        html += '<div class="ai-section-title">Recommendations</div>';
+        parsed.recommendations.forEach(r => { html += '<div class="ai-rec-item">' + r + '</div>'; });
+      }
+      if ((intent === 'vehicle' || intent === 'all') && vehData) {
+        html += '<div id="aiBarChart" class="ai-bar-chart" style="margin-top:10px;"></div>';
+      }
+      box.innerHTML = html;
+      box.classList.add('active');
+      if ((intent === 'vehicle' || intent === 'all') && vehData) {
+        renderBarChart(vehData);
+      }
+    }
+
+    async function analyzeMap() {
+      const question = (document.getElementById('aiQuestion').value || '').trim();
+      if (!question) return;
+      if (!window.ANTHROPIC_API_KEY) {
+        const box = document.getElementById('aiResponseBox');
+        box.innerHTML = '<div style="color:#dc2626;font-size:11px;">API key not configured. Add window.ANTHROPIC_API_KEY to config.js</div>';
+        box.classList.add('active');
+        return;
+      }
+      const btn = document.getElementById('aiAnalyzeBtn');
+      btn.disabled = true;
+      btn.classList.add('loading');
+      clearHighlights();
+      const box = document.getElementById('aiResponseBox');
+      box.innerHTML = '<div style="color:#6b7280;font-size:11px;">Gathering data...</div>';
+      box.classList.add('active');
+      try {
+        const intent = detectIntent(question);
+        const { pedTileData } = await loadTileData();
+        const vehData = (intent === 'vehicle' || intent === 'all') ? gatherVehicleData() : null;
+        const pedFromFile = (intent === 'ped' || intent === 'all') ? await loadPedsFromFile() : null;
+        const pedData = pedFromFile || ((intent === 'ped' || intent === 'all') ? pedTileData : null);
+        const plosData = (intent === 'plos' || intent === 'all') ? gatherPlosData() : null;
+        const context = summariseForClaude(vehData, pedData, plosData, intent);
+        box.innerHTML = '<div style="color:#6b7280;font-size:11px;">Asking Claude...</div>';
+        const raw = await callClaudeAPI(question, context);
+        const parsed = parseClaudeJSON(raw);
+        renderResponse(parsed, intent, vehData);
+        if (intent === 'vehicle' && vehData && vehData.topSegments.length) {
+          applyHighlights(vehData.topSegments, 'Top vehicle segments at ' + vehData.peakLabel);
+        } else if (intent === 'ped' && pedData && pedData.topSegments.length) {
+          applyHighlights(pedData.topSegments, 'Top pedestrian density segments');
+        } else if (intent === 'plos' && plosData && plosData.topSegments.length) {
+          applyHighlights(plosData.topSegments, 'Worst PLOS segments');
+        } else if (intent === 'all') {
+          const allSegs = [
+            ...(vehData ? vehData.topSegments.slice(0, 4) : []),
+            ...(pedData ? pedData.topSegments.slice(0, 3) : []),
+            ...(plosData ? plosData.topSegments.slice(0, 3) : [])
+          ];
+          if (allSegs.length) applyHighlights(allSegs, 'Most critical segments (all datasets)');
+        }
+      } catch (err) {
+        box.innerHTML = '<div style="color:#dc2626;font-size:11px;">Error: ' + err.message + '</div>';
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+      }
+    }
+
+    setTimeout(function () {
+      const analyzeBtn = document.getElementById('aiAnalyzeBtn');
+      const clearBtn = document.getElementById('aiClearBtn');
+      const chips = document.querySelectorAll('.ai-chip');
+      if (analyzeBtn) analyzeBtn.addEventListener('click', analyzeMap);
+      if (clearBtn) clearBtn.addEventListener('click', function () {
+        const q = document.getElementById('aiQuestion');
+        const box = document.getElementById('aiResponseBox');
+        if (q) q.value = '';
+        if (box) { box.innerHTML = ''; box.classList.remove('active'); }
+        clearHighlights();
+      });
+      chips.forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          const q = document.getElementById('aiQuestion');
+          if (q) q.value = chip.dataset.q;
+        });
+      });
+    }, 600);
+  })();
+  </script>
+
+  <!-- Landing overlay -->
+  <div id="landing" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-md">
+    <div class="w-[min(92vw,580px)] rounded-2xl bg-white/80 border border-white/60 shadow-xl p-6">
+      <div class="flex items-center justify-between gap-4 mb-4 pb-4 border-b-2 border-black">
+        <div class="flex items-center gap-4">
+          <img src="./src/assets/MIT.svg" alt="MIT" class="h-8 w-auto scale-[0.8]" />
+          <div class="flex items-center gap-3">
+            <img src="./src/assets/SA+P.svg" alt="SA+P" class="h-8 w-auto ml-[-20px] scale-[0.7]" />
+            <img src="./src/assets/SBX.png" alt="SBX" class="h-8 w-auto ml-[200px] scale-[1.3]" />
+          </div>
+        </div>
+      </div>
+      
+      <div class="disclaimer__content">
+        <div class="disclaimer__item">
+          <h3>Identification</h3>
+          <p>
+            This web map is developed to identify traffic and pedestrian density patterns in the South Bronx
+            and to support design strategies for safer, more accessible streets.
+          </p>
+        </div>
+
+        <div class="disclaimer__item">
+          <h3>Use</h3>
+          <p>
+            The map is intended for planning and design exploration only. It helps visualize where movement
+            demand is concentrated and highlights areas that may require improvement (e.g., safety, comfort,
+            connectivity). Results should be interpreted as indicators not as precise measurements of real-time
+            conditions.
+          </p>
+        </div>
+
+        <div class="disclaimer__item">
+          <h3>Source</h3>
+          <p>
+            This work is based on collective research and publicly available datasets, primarily from NYC Open Data
+            and related open data sources. Data accuracy, completeness, and timeliness may vary by dataset and
+            update cycle.
+          </p>
+        </div>
+
+        <div class="disclaimer__item">
+          <h3>Notes</h3>
+          <p>
+            Street conditions may change over time due to construction, seasonal patterns, or policy updates.
+            Users should supplement this map with field observation and community input when making decisions.
+          </p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-2">
+        <button id="enterBtn" class="inline-flex items-center justify-center rounded-lg bg-black text-white w-[min(92vw,580px)] px-4 py-2 font-medium hover:bg-black/90">Enter</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const landing = document.getElementById('landing');
+    const enterBtn = document.getElementById('enterBtn');
+    if (sessionStorage.getItem('skip-landing') === '1') landing.classList.add('hidden');
+    function closeLanding(){ landing.classList.add('hidden'); }
+    enterBtn.addEventListener('click', closeLanding);
+  </script>
+  
+</body>
+</html>
+
+

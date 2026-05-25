@@ -1,0 +1,27 @@
+Pedestrian - Blue Gradient
+#CCE5FF,
+#B3D8FF,
+#99CBFF,
+#80BEFF,
+#66AFFF,
+#4D9CFF,
+#3389FF,
+#0079FF,
+#0066E6,
+#0047B3,
+#002F8C,
+#001A66
+
+Vehicle - Red Gradient
+#FFF5F2, 
+#FFE0D9, 
+#FFC2B3,
+#FFA38C,
+#FF8566,
+#FF664D, 
+#FF4D33,
+#FF3319,
+#E62600,
+#CC1F00,
+#991700,
+#660D00
